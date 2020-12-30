@@ -356,9 +356,18 @@ contract HecoPool is Ownable {
         }
         if (_amount > 0) {
             pool.lpToken.safeTransferFrom(_user, address(this), _amount);
-            user.amount = user.amount.add(_amount);
-            pool.totalAmount = pool.totalAmount.add(_amount);
-            IMasterChefHeco(multLpChef).deposit(poolCorrespond[_pid], _amount);
+            if (pool.totalAmount == 0) {
+                IMasterChefHeco(multLpChef).deposit(poolCorrespond[_pid], _amount);
+                user.amount = user.amount.add(_amount);
+                pool.totalAmount = pool.totalAmount.add(_amount);
+            } else {
+                uint256 beforeToken = IERC20(multLpToken).balanceOf(address(this));
+                IMasterChefHeco(multLpChef).deposit(poolCorrespond[_pid], _amount);
+                uint256 afterToken = IERC20(multLpToken).balanceOf(address(this));
+                pool.accMultLpPerShare = pool.accMultLpPerShare.add(afterToken.sub(beforeToken).mul(1e12).div(pool.totalAmount));
+                user.amount = user.amount.add(_amount);
+                pool.totalAmount = pool.totalAmount.add(_amount);
+            }
         }
         user.rewardDebt = user.amount.mul(pool.accMdxPerShare).div(1e12);
         user.multLpRewardDebt = user.amount.mul(pool.accMultLpPerShare).div(1e12);
