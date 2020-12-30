@@ -83,8 +83,8 @@ contract HecoPool is Ownable {
         devAddress = _devAddress;
         mdxPerBlock = _mdxPerBlock;
         startBlock = _startBlock;
-        // About 30 days
-        endBlock = _startBlock.add(877193);
+        // About 30 days  52per
+        endBlock = _startBlock.add(961539);
     }
 
     function setStartHalvingPeriod(uint256 _block) public onlyOwner {
