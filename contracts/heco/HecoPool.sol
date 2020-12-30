@@ -44,9 +44,9 @@ contract HecoPool is Ownable {
     PoolInfo[] public poolInfo;
     // Info of each user that stakes LP tokens.
     mapping(uint256 => mapping(address => UserInfo)) public userInfo;
-    // Corresponding to the pid of the doubleLP pool
+    // Corresponding to the pid of the multLP pool
     mapping(uint256 => uint256) public poolCorrespond;
-    // LP corresponding address
+    // pid corresponding address
     mapping(address => uint256) public LpOfPid;
     // Control mining
     bool public pause = true;
@@ -83,7 +83,7 @@ contract HecoPool is Ownable {
         devAddress = _devAddress;
         mdxPerBlock = _mdxPerBlock;
         startBlock = _startBlock;
-        endBlock = _startBlock.add(200000);
+        endBlock = _startBlock.add(877193);
     }
 
     function setStartHalvingPeriod(uint256 _block) public onlyOwner {
@@ -102,22 +102,22 @@ contract HecoPool is Ownable {
         return poolInfo.length;
     }
 
-    function addDoubleLP(address _addLP) public onlyOwner returns (bool) {
+    function addMultLP(address _addLP) public onlyOwner returns (bool) {
         require(_addLP != address(0), "LP is the zero address");
         IERC20(_addLP).approve(multLpChef, uint256(- 1));
         return EnumerableSet.add(_multLP, _addLP);
     }
 
-    function isDoubleLP(address _LP) public view returns (bool) {
+    function isMultLP(address _LP) public view returns (bool) {
         return EnumerableSet.contains(_multLP, _LP);
     }
 
-    function getDoubleLPLength() public view returns (uint256) {
+    function getMultLPLength() public view returns (uint256) {
         return EnumerableSet.length(_multLP);
     }
 
-    function getDoubleLPAddress(uint256 _pid) public view returns (address){
-        require(_pid <= getDoubleLPLength() - 1, "not find this DoubleLP");
+    function getMultLPAddress(uint256 _pid) public view returns (address){
+        require(_pid <= getMultLPLength() - 1, "not find this multLP");
         return EnumerableSet.at(_multLP, _pid);
     }
 
@@ -130,23 +130,22 @@ contract HecoPool is Ownable {
     }
 
     function setEndBlock(uint256 _block) public onlyOwner {
-        require(mdx.totalSupply() <= 5000000 * 1e18, "Pre-mining is not over yet");
         require(_block > endBlock, "EndBlock : OVERFLOW");
         endBlock = _block;
     }
 
-    function setDoubleLP(address _multLpToken, address _multLpChef) public onlyOwner {
+    function setMultLP(address _multLpToken, address _multLpChef) public onlyOwner {
         require(_multLpToken != address(0) && _multLpChef != address(0), "is the zero address");
         multLpToken = _multLpToken;
         multLpChef = _multLpChef;
     }
 
-    function replaceDoubleLp(address _multLpToken, address _multLpChef) public onlyOwner {
+    function replaceMultLP(address _multLpToken, address _multLpChef) public onlyOwner {
         require(_multLpToken != address(0) && _multLpChef != address(0), "is the zero address");
         require(pause == false, "No mining suspension");
         multLpToken = _multLpToken;
         multLpChef = _multLpChef;
-        uint256 length = getDoubleLPLength();
+        uint256 length = getMultLPLength();
         while (length > 0) {
             address dAddress = EnumerableSet.at(_multLP, 0);
             uint256 pid = LpOfPid[dAddress];
@@ -185,7 +184,7 @@ contract HecoPool is Ownable {
         poolInfo[_pid].allocPoint = _allocPoint;
     }
 
-    // The current pool corresponds to the pid of the DoubleLp pool
+    // The current pool corresponds to the pid of the multLP pool
     function setPoolCorr(uint256 _pid, uint256 _sid) public onlyOwner {
         require(_pid <= poolLength() - 1, "not find this pool");
         poolCorrespond[_pid] = _sid;
@@ -200,10 +199,10 @@ contract HecoPool is Ownable {
     }
 
     function getMdxBlockReward() public view returns (uint256){
-        uint256 halving = _mdxHalving();
         if (halvingTimes == 0) {
             return mdxPerBlock;
         }
+        uint256 halving = _mdxHalving();
         if (halving > halvingTimes) {
             return 0;
         }
@@ -225,7 +224,7 @@ contract HecoPool is Ownable {
             return;
         }
         uint256 lpSupply;
-        if (isDoubleLP(address(pool.lpToken))) {
+        if (isMultLP(address(pool.lpToken))) {
             if (pool.totalAmount == 0) {
                 pool.lastRewardBlock = block.number;
                 return;
@@ -264,7 +263,7 @@ contract HecoPool is Ownable {
     // View function to see pending MDXs on frontend.
     function pending(uint256 _pid, address _user) external view returns (uint256, uint256){
         PoolInfo storage pool = poolInfo[_pid];
-        if (isDoubleLP(address(pool.lpToken))) {
+        if (isMultLP(address(pool.lpToken))) {
             (uint256 mdxAmount, uint256 tokenAmount) = pendingMdxAndToken(_pid, _user);
             return (mdxAmount, tokenAmount);
         } else {
@@ -329,7 +328,7 @@ contract HecoPool is Ownable {
     // Deposit LP tokens to CoinChef for MDX allocation.
     function deposit(uint256 _pid, uint256 _amount) public notPause {
         PoolInfo storage pool = poolInfo[_pid];
-        if (isDoubleLP(address(pool.lpToken))) {
+        if (isMultLP(address(pool.lpToken))) {
             depositMdxAndToken(_pid, _amount, msg.sender);
         } else {
             depositMdx(_pid, _amount, msg.sender);
@@ -387,7 +386,7 @@ contract HecoPool is Ownable {
     // Withdraw LP tokens from CoinChef.
     function withdraw(uint256 _pid, uint256 _amount) public notPause {
         PoolInfo storage pool = poolInfo[_pid];
-        if (isDoubleLP(address(pool.lpToken))) {
+        if (isMultLP(address(pool.lpToken))) {
             withdrawMdxAndToken(_pid, _amount, msg.sender);
         } else {
             withdrawMdx(_pid, _amount, msg.sender);
@@ -442,7 +441,7 @@ contract HecoPool is Ownable {
     // Withdraw without caring about rewards. EMERGENCY ONLY.
     function emergencyWithdraw(uint256 _pid) public notPause {
         PoolInfo storage pool = poolInfo[_pid];
-        if (isDoubleLP(address(pool.lpToken))) {
+        if (isMultLP(address(pool.lpToken))) {
             emergencyWithdrawMdxAndToken(_pid, msg.sender);
         } else {
             emergencyWithdrawMdx(_pid, msg.sender);
