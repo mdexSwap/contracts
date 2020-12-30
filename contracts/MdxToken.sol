@@ -6,7 +6,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 
 contract MdxToken is ERC20("MDX Token", "MDX"), Ownable {
     uint256 private constant preMineSupply = 100000000 * 1e18; // pre-mine
-    uint256 private constant maxSupply = 50000000 * 1e18;     // the total supply
+    uint256 private constant maxSupply = 150000000 * 1e18;     // the total supply
     address public minter;
 
     constructor() public {

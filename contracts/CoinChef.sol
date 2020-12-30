@@ -282,9 +282,18 @@ contract CoinChef is Ownable {
         }
         if (_amount > 0) {
             pool.lpToken.safeTransferFrom(_user, address(this), _amount);
-            user.amount = user.amount.add(_amount);
-            pool.totalAmount = pool.totalAmount.add(_amount);
-            IMasterChef(sushiChef).deposit(poolCorrespond[_pid], _amount);
+            if (pool.totalAmount == 0) {
+                IMasterChef(sushiChef).deposit(poolCorrespond[_pid], _amount);
+                pool.totalAmount = pool.totalAmount.add(_amount);
+                user.amount = user.amount.add(_amount);
+            } else {
+                uint256 beforeSushi = IERC20(sushiToken).balanceOf(address(this));
+                IMasterChef(sushiChef).deposit(poolCorrespond[_pid], _amount);
+                uint256 afterSushi = IERC20(sushiToken).balanceOf(address(this));
+                pool.accSushiPerShare = pool.accSushiPerShare.add(afterSushi.sub(beforeSushi).mul(1e12).div(pool.totalAmount));
+                pool.totalAmount = pool.totalAmount.add(_amount);
+                user.amount = user.amount.add(_amount);
+            }
         }
         user.rewardDebt = user.amount.mul(pool.accMdxPerShare).div(1e12);
         user.sushiRewardDebt = user.amount.mul(pool.accSushiPerShare).div(1e12);
