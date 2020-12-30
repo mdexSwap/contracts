@@ -9,7 +9,7 @@ import "@openzeppelin/contracts/math/SafeMath.sol";
 import "../interface/IMdx.sol";
 import "../interface/IMasterChefHeco.sol";
 
-// HecoPool is the master of MDX. He can make MDXToken and he is a fair guy.
+
 contract HecoPool is Ownable {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
@@ -34,7 +34,7 @@ contract HecoPool is Ownable {
         uint256 totalAmount;    // Total amount of current pool deposit.
     }
 
-    // The MDX TOKEN!
+    // The MDX Token!
     IMdx public mdx;
     // Dev address.
     address public devAddress;
@@ -83,6 +83,7 @@ contract HecoPool is Ownable {
         devAddress = _devAddress;
         mdxPerBlock = _mdxPerBlock;
         startBlock = _startBlock;
+        // About 30 days
         endBlock = _startBlock.add(877193);
     }
 
@@ -325,7 +326,7 @@ contract HecoPool is Ownable {
         return 0;
     }
 
-    // Deposit LP tokens to CoinChef for MDX allocation.
+    // Deposit LP tokens to HecoPool for MDX allocation.
     function deposit(uint256 _pid, uint256 _amount) public notPause {
         PoolInfo storage pool = poolInfo[_pid];
         if (isMultLP(address(pool.lpToken))) {
@@ -383,7 +384,7 @@ contract HecoPool is Ownable {
         emit Deposit(_user, _pid, _amount);
     }
 
-    // Withdraw LP tokens from CoinChef.
+    // Withdraw LP tokens from HecoPool.
     function withdraw(uint256 _pid, uint256 _amount) public notPause {
         PoolInfo storage pool = poolInfo[_pid];
         if (isMultLP(address(pool.lpToken))) {
