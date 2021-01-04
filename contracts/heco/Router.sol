@@ -112,7 +112,7 @@ interface IMdexPair {
 
     function sync() external;
 
-    function price(address token) external view returns (uint256);
+    function price(address token, uint256 baseDecimal) external view returns (uint256);
 
     function initialize(address, address) external;
 }

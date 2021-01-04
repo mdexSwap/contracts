@@ -1,6 +1,31 @@
 pragma solidity >=0.5.0 <0.7.0;
 
-import "../interface/IMdx.sol";
+interface IERC20 {
+    event Approval(address indexed owner, address indexed spender, uint value);
+    event Transfer(address indexed from, address indexed to, uint value);
+
+    function name() external view returns (string memory);
+
+    function symbol() external view returns (string memory);
+
+    function decimals() external view returns (uint8);
+
+    function totalSupply() external view returns (uint);
+
+    function balanceOf(address owner) external view returns (uint);
+
+    function allowance(address owner, address spender) external view returns (uint);
+
+    function approve(address spender, uint value) external returns (bool);
+
+    function transfer(address to, uint value) external returns (bool);
+
+    function transferFrom(address from, address to, uint value) external returns (bool);
+}
+
+interface IMdx is IERC20 {
+    function mint(address to, uint256 amount) external returns (bool);
+}
 
 library EnumerableSet {
     // To implement this library for multiple types with as little code
@@ -569,7 +594,7 @@ interface IMdexPair {
 
     function sync() external;
 
-    function price(address token) external view returns (uint256);
+    function price(address token, uint256 baseDecimal) external view returns (uint256);
 
     function initialize(address, address) external;
 }
@@ -592,7 +617,8 @@ contract SwapMining is Ownable {
     address public router;
     IMdexFactory public factory;
     IMdx public mdx;
-    address public WHT;
+    //计算价格的锚定代币
+    address public targetToken;
     //pair对应的池子pid
     mapping(address => uint256) public pairOfPid;
 
@@ -600,14 +626,14 @@ contract SwapMining is Ownable {
         IMdx _mdx,
         IMdexFactory _factory,
         address _router,
-        address _WHT,
+        address _token,
         uint256 _mdxPerBlock,
         uint256 _startBlock
     ) public {
         mdx = _mdx;
         factory = _factory;
         router = _router;
-        WHT = _WHT;
+        targetToken = _token;
         mdxPerBlock = _mdxPerBlock;
         startBlock = _startBlock;
     }
@@ -711,6 +737,12 @@ contract SwapMining is Ownable {
         factory = newFactory;
     }
 
+    function setTargetToken(address _targetToken) public onlyOwner {
+        require(_targetToken != address(0), "SwapMining: new targetToken is the zero address");
+        require(isWhitelist(_targetToken), "SwapMining: illegal targetToken");
+        targetToken = _targetToken;
+    }
+
     //判断是否减半,在哪个周期
     function phase(uint256 blockNumber) public view returns (uint256) {
         if (halvingPeriod == 0) {
@@ -783,31 +815,6 @@ contract SwapMining is Ownable {
         return true;
     }
 
-    //计算token的价值
-    function rebalance(address token, uint256 amount) public view returns (uint256) {
-        uint256 price = 0;
-        if (WHT == token) {
-            price = SafeMath.wad();
-        } else if (IMdexFactory(factory).getPair(token, WHT) != address(0)) {
-            price = IMdexPair(IMdexFactory(factory).getPair(token, WHT)).price(token);
-        } else {
-            uint256 length = getWhitelistLength();
-            for (uint256 index = 0; index < length; index++) {
-                address base = getWhitelist(index);
-                if (IMdexFactory(factory).getPair(token, base) != address(0) && IMdexFactory(factory).getPair(base, WHT) != address(0)) {
-                    uint256 price0 = IMdexPair(IMdexFactory(factory).getPair(token, base)).price(token);
-                    uint256 price1 = IMdexPair(IMdexFactory(factory).getPair(base, WHT)).price(base);
-                    price = price0.wmul(price1);
-                    break;
-                }
-            }
-        }
-        if (price <= 0) {
-            return 0;
-        }
-        return price.wmul(amount);
-    }
-
     //交易挖矿  只能由router调用
     function swap(address account, address input, address output, uint256 amount) public onlyRouter returns (bool) {
         require(account != address(0), "SwapMining: taker swap account is the zero address");
@@ -830,10 +837,12 @@ contract SwapMining is Ownable {
         if (pool.pair != pair || pool.allocPoint <= 0) {
             return false;
         }
-        uint256 quantity = rebalance(output, amount);
-        if (quantity <= 0) {
+
+        uint256 price = getPrice(output, targetToken);
+        if (price <= 0) {
             return false;
         }
+        uint256 quantity = price.mul(amount).div(10 ** uint256(IERC20(targetToken).decimals()));
 
         mint(pairOfPid[pair]);
 
@@ -890,17 +899,38 @@ contract SwapMining is Ownable {
         PoolInfo memory pool = poolInfo[_pid];
         address token0 = IMdexPair(pool.pair).token0();
         address token1 = IMdexPair(pool.pair).token1();
-        //pid,token0,token1,池子的mdx余额,池子总交易额
+        //pid,token0,token1,池子剩余奖励,池子总交易额
         return (_pid, token0, token1, pool.allocMdxAmount, pool.totalQuantity, pool.allocPoint);
     }
 
-    function isRouter(address account) public view returns (bool) {
-        return account == router;
+    modifier onlyRouter() {
+        require(msg.sender == router, "SwapMining: caller is not the router");
+        _;
     }
 
-    modifier onlyRouter() {
-        require(isRouter(msg.sender), "SwapMining: caller is not the router");
-        _;
+    //oracle 一个token等于多少个anchorToken(WHT,HUSD,ETH等)
+    function getPrice(address token, address anchorToken) public view returns (uint256) {
+        uint256 price = 0;
+        uint256 anchorDecimal = 10 ** uint256(IERC20(anchorToken).decimals());
+        uint256 baseDecimal = 10 ** uint256(IERC20(token).decimals());
+        if (anchorToken == token) {
+            price = anchorDecimal;
+        } else if (IMdexFactory(factory).getPair(token, anchorToken) != address(0)) {
+            price = IMdexPair(IMdexFactory(factory).getPair(token, anchorToken)).price(token, baseDecimal);
+        } else {
+            uint256 length = getWhitelistLength();
+            for (uint256 index = 0; index < length; index++) {
+                address base = getWhitelist(index);
+                if (IMdexFactory(factory).getPair(token, base) != address(0) && IMdexFactory(factory).getPair(base, anchorToken) != address(0)) {
+                    uint256 decimal = 10 ** uint256(IERC20(base).decimals());
+                    uint256 price0 = IMdexPair(IMdexFactory(factory).getPair(token, base)).price(token, baseDecimal);
+                    uint256 price1 = IMdexPair(IMdexFactory(factory).getPair(base, anchorToken)).price(base, decimal);
+                    price = price0.mul(price1).div(decimal);
+                    break;
+                }
+            }
+        }
+        return price;
     }
 
 }

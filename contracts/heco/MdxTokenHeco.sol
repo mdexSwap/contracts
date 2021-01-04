@@ -44,6 +44,7 @@ contract MdxToken is ERC20("MDX Token", "MDX"), Ownable {
     }
 
     function getMinter(uint256 _index) public view onlyOwner returns (address){
+        require(_index <= getMinterLength() - 1, "MdxToken: index out of bounds");
         return EnumerableSet.at(_minters, _index);
     }
 

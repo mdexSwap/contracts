@@ -112,7 +112,7 @@ interface IMdexPair {
 
     function sync() external;
 
-    function price(address token) external view returns (uint256);
+    function price(address token, uint256 baseDecimal) external view returns (uint256);
 
     function initialize(address, address) external;
 }
@@ -515,14 +515,14 @@ contract MdexPair is IMdexPair, MdexERC20 {
         _update(IERC20(token0).balanceOf(address(this)), IERC20(token1).balanceOf(address(this)), reserve0, reserve1);
     }
 
-    function price(address token) public view returns (uint256) {
+    function price(address token, uint256 baseDecimal) public view returns (uint256) {
         if ((token0 != token && token1 != token) || 0 == reserve0 || 0 == reserve1) {
             return 0;
         }
         if (token0 == token) {
-            return SafeMath.wad().mul(reserve1).div(reserve0);
+            return uint256(reserve1).mul(baseDecimal).div(uint256(reserve0));
         } else {
-            return SafeMath.wad().mul(reserve0).div(reserve1);
+            return uint256(reserve0).mul(baseDecimal).div(uint256(reserve1));
         }
     }
 

@@ -36,8 +36,6 @@ contract HecoPool is Ownable {
 
     // The MDX Token!
     IMdx public mdx;
-    // Dev address.
-    address public devAddress;
     // MDX tokens created per block.
     uint256 public mdxPerBlock;
     // Info of each pool.
@@ -81,22 +79,18 @@ contract HecoPool is Ownable {
         startBlock = _startBlock;
     }
 
-    //设置开始计算减半区块
     function setStartHalvingPeriod(uint256 _block) public onlyOwner {
         startHalvingPeriod = _block;
     }
 
-    //设置多少个区块开始减半
     function setHalvingPeriod(uint256 _block) public onlyOwner {
         halvingPeriod = _block;
     }
 
-    //设置减半周期
     function setHalvingTimes(uint256 _cycle) public onlyOwner {
         halvingTimes = _cycle;
     }
 
-    //设置每个区块产出的mdx数量
     function setMdxPerBlock(uint256 _newPerBlock) public onlyOwner {
         massUpdatePools();
         mdxPerBlock = _newPerBlock;
@@ -475,12 +469,6 @@ contract HecoPool is Ownable {
         } else {
             mdx.transfer(_to, _amount);
         }
-    }
-
-    // Update dev address by the previous dev.
-    function dev(address _devAddress) public {
-        require(msg.sender == devAddress, "dev: wut?");
-        devAddress = _devAddress;
     }
 
     modifier notPause() {
