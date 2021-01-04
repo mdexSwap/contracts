@@ -110,6 +110,8 @@ interface IMdexPair {
 
     function sync() external;
 
+    function price(address token) external view returns (uint256);
+
     function initialize(address, address) external;
 }
 
@@ -222,6 +224,8 @@ interface IMdexRouter {
 
     function getAmountsIn(uint256 amountOut, address[] calldata path) external view returns (uint256[] memory amounts);
 
+    function weth(address token) external view returns (uint256);
+
     function removeLiquidityETHSupportingFeeOnTransferTokens(
         address token,
         uint liquidity,
@@ -265,6 +269,54 @@ interface IMdexRouter {
     ) external;
 }
 
+interface ISwapMining {
+    function swap(address account, address input, address output,uint256 amount ) external returns (bool);
+
+    function getWhitelistLength() external view returns (uint256);
+
+    function getWhitelist(uint256) external view returns (address);
+}
+
+contract Ownable {
+    address private _owner;
+
+    constructor () internal {
+        _owner = msg.sender;
+        emit OwnershipTransferred(address(0), _owner);
+    }
+
+    function owner() public view returns (address) {
+        return _owner;
+    }
+
+    function isOwner(address account) public view returns (bool) {
+        return account == _owner;
+    }
+
+    function renounceOwnership() public onlyOwner {
+        emit OwnershipTransferred(_owner, address(0));
+        _owner = address(0);
+    }
+
+    function _transferOwnership(address newOwner) internal {
+        require(newOwner != address(0), "Ownable: new owner is the zero address");
+        emit OwnershipTransferred(_owner, newOwner);
+        _owner = newOwner;
+    }
+
+    function transferOwnership(address newOwner) public onlyOwner {
+        _transferOwnership(newOwner);
+    }
+
+
+    modifier onlyOwner() {
+        require(isOwner(msg.sender), "Ownable: caller is not the owner");
+        _;
+    }
+
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+}
+
 interface IERC20 {
     event Approval(address indexed owner, address indexed spender, uint value);
     event Transfer(address indexed from, address indexed to, uint value);
@@ -296,13 +348,12 @@ interface IWETH {
     function withdraw(uint) external;
 }
 
-contract MdexRouter is IMdexRouter {
+contract MdexRouter is IMdexRouter, Ownable {
     using SafeMath for uint256;
 
-    //        address public immutable override factory;
-    //        address public immutable override WETH;
-    address public factory;
-    address public WETH;
+    address public immutable override factory;
+    address public immutable override WETH;
+    address public swapMining;
 
     modifier ensure(uint deadline) {
         require(deadline >= block.timestamp, 'MdexRouter: EXPIRED');
@@ -321,6 +372,10 @@ contract MdexRouter is IMdexRouter {
 
     function pairFor(address tokenA, address tokenB) public view returns (address pair){
         pair = IMdexFactory(factory).pairFor(factory, tokenA, tokenB);
+    }
+
+    function setSwapMining(address _swapMininng) public onlyOwner {
+        swapMining = _swapMininng;
     }
 
     // **** ADD LIQUIDITY ****
@@ -515,6 +570,9 @@ contract MdexRouter is IMdexRouter {
             (address input, address output) = (path[i], path[i + 1]);
             (address token0,) = IMdexFactory(factory).sortTokens(input, output);
             uint amountOut = amounts[i + 1];
+            if (swapMining != address(0)) {
+                ISwapMining(swapMining).swap(msg.sender, input, output, amountOut);
+            }
             (uint amount0Out, uint amount1Out) = input == token0 ? (uint(0), amountOut) : (amountOut, uint(0));
             address to = i < path.length - 2 ? pairFor(output, path[i + 2]) : _to;
             IMdexPair(pairFor(input, output)).swap(
@@ -638,6 +696,9 @@ contract MdexRouter is IMdexRouter {
                 amountInput = IERC20(input).balanceOf(address(pair)).sub(reserveInput);
                 amountOutput = IMdexFactory(factory).getAmountOut(amountInput, reserveInput, reserveOutput);
             }
+            if (swapMining != address(0)) {
+                ISwapMining(swapMining).swap(msg.sender, input, output, amountOutput);
+            }
             (uint amount0Out, uint amount1Out) = input == token0 ? (uint(0), amountOutput) : (amountOutput, uint(0));
             address to = i < path.length - 2 ? pairFor(output, path[i + 2]) : _to;
             pair.swap(amount0Out, amount1Out, to, new bytes(0));
@@ -729,21 +790,175 @@ contract MdexRouter is IMdexRouter {
     function getAmountsIn(uint256 amountOut, address[] memory path) public view override returns (uint256[] memory amounts){
         return IMdexFactory(factory).getAmountsIn(factory, amountOut, path);
     }
+
+    function weth(address token) public view override returns (uint256) {
+        uint256 price = 0;
+        if (swapMining == address(0)) {
+            return price;
+        }
+        if (WETH == token) {
+            price = SafeMath.wad();
+        } else if (IMdexFactory(factory).getPair(token, WETH) != address(0)) {
+            price = IMdexPair(IMdexFactory(factory).getPair(token, WETH)).price(token);
+        } else {
+            uint256 length = ISwapMining(swapMining).getWhitelistLength();
+            for (uint256 index = 0; index < length; index++) {
+                address base = ISwapMining(swapMining).getWhitelist(index);
+                if (IMdexFactory(factory).getPair(token, base) != address(0) && IMdexFactory(factory).getPair(base, WETH) != address(0)) {
+                    uint256 price0 = IMdexPair(IMdexFactory(factory).getPair(token, base)).price(token);
+                    uint256 price1 = IMdexPair(IMdexFactory(factory).getPair(base, WETH)).price(base);
+                    price = price0.wmul(price1);
+                    break;
+                }
+            }
+        }
+        return price;
+    }
 }
 
 // a library for performing overflow-safe math, courtesy of DappHub (https://github.com/dapphub/ds-math)
 
 library SafeMath {
-    function add(uint x, uint y) internal pure returns (uint z) {
-        require((z = x + y) >= x, 'ds-math-add-overflow');
+    uint256 constant WAD = 10 ** 18;
+    uint256 constant RAY = 10 ** 27;
+
+    function wad() public pure returns (uint256) {
+        return WAD;
     }
 
-    function sub(uint x, uint y) internal pure returns (uint z) {
-        require((z = x - y) <= x, 'ds-math-sub-underflow');
+    function ray() public pure returns (uint256) {
+        return RAY;
     }
 
-    function mul(uint x, uint y) internal pure returns (uint z) {
-        require(y == 0 || (z = x * y) / y == x, 'ds-math-mul-overflow');
+    function add(uint256 a, uint256 b) internal pure returns (uint256) {
+        uint256 c = a + b;
+        require(c >= a, "SafeMath: addition overflow");
+
+        return c;
+    }
+
+    function sub(uint256 a, uint256 b) internal pure returns (uint256) {
+        return sub(a, b, "SafeMath: subtraction overflow");
+    }
+
+    function sub(uint256 a, uint256 b, string memory errorMessage) internal pure returns (uint256) {
+        require(b <= a, errorMessage);
+        uint256 c = a - b;
+
+        return c;
+    }
+
+    function mul(uint256 a, uint256 b) internal pure returns (uint256) {
+        // Gas optimization: this is cheaper than requiring 'a' not being zero, but the
+        // benefit is lost if 'b' is also tested.
+        // See: https://github.com/OpenZeppelin/openzeppelin-contracts/pull/522
+        if (a == 0) {
+            return 0;
+        }
+
+        uint256 c = a * b;
+        require(c / a == b, "SafeMath: multiplication overflow");
+
+        return c;
+    }
+
+    function div(uint256 a, uint256 b) internal pure returns (uint256) {
+        return div(a, b, "SafeMath: division by zero");
+    }
+
+    function div(uint256 a, uint256 b, string memory errorMessage) internal pure returns (uint256) {
+        // Solidity only automatically asserts when dividing by 0
+        require(b > 0, errorMessage);
+        uint256 c = a / b;
+        // assert(a == b * c + a % b); // There is no case in which this doesn't hold
+
+        return c;
+    }
+
+    function mod(uint256 a, uint256 b) internal pure returns (uint256) {
+        return mod(a, b, "SafeMath: modulo by zero");
+    }
+
+    function mod(uint256 a, uint256 b, string memory errorMessage) internal pure returns (uint256) {
+        require(b != 0, errorMessage);
+        return a % b;
+    }
+
+    function min(uint256 a, uint256 b) internal pure returns (uint256) {
+        return a <= b ? a : b;
+    }
+
+    function max(uint256 a, uint256 b) internal pure returns (uint256) {
+        return a >= b ? a : b;
+    }
+
+    function sqrt(uint256 a) internal pure returns (uint256 b) {
+        if (a > 3) {
+            b = a;
+            uint256 x = a / 2 + 1;
+            while (x < b) {
+                b = x;
+                x = (a / x + x) / 2;
+            }
+        } else if (a != 0) {
+            b = 1;
+        }
+    }
+
+    function wmul(uint256 a, uint256 b) internal pure returns (uint256) {
+        return mul(a, b) / WAD;
+    }
+
+    function wmulRound(uint256 a, uint256 b) internal pure returns (uint256) {
+        return add(mul(a, b), WAD / 2) / WAD;
+    }
+
+    function rmul(uint256 a, uint256 b) internal pure returns (uint256) {
+        return mul(a, b) / RAY;
+    }
+
+    function rmulRound(uint256 a, uint256 b) internal pure returns (uint256) {
+        return add(mul(a, b), RAY / 2) / RAY;
+    }
+
+    function wdiv(uint256 a, uint256 b) internal pure returns (uint256) {
+        return div(mul(a, WAD), b);
+    }
+
+    function wdivRound(uint256 a, uint256 b) internal pure returns (uint256) {
+        return add(mul(a, WAD), b / 2) / b;
+    }
+
+    function rdiv(uint256 a, uint256 b) internal pure returns (uint256) {
+        return div(mul(a, RAY), b);
+    }
+
+    function rdivRound(uint256 a, uint256 b) internal pure returns (uint256) {
+        return add(mul(a, RAY), b / 2) / b;
+    }
+
+    function wpow(uint256 x, uint256 n) internal pure returns (uint256) {
+        uint256 result = WAD;
+        while (n > 0) {
+            if (n % 2 != 0) {
+                result = wmul(result, x);
+            }
+            x = wmul(x, x);
+            n /= 2;
+        }
+        return result;
+    }
+
+    function rpow(uint256 x, uint256 n) internal pure returns (uint256) {
+        uint256 result = RAY;
+        while (n > 0) {
+            if (n % 2 != 0) {
+                result = rmul(result, x);
+            }
+            x = rmul(x, x);
+            n /= 2;
+        }
+        return result;
     }
 }
 

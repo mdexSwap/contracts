@@ -110,6 +110,8 @@ interface IMdexPair {
 
     function sync() external;
 
+    function price(address token) external view returns (uint256);
+
     function initialize(address, address) external;
 }
 
@@ -388,8 +390,8 @@ contract MdexPair is IMdexPair, MdexERC20 {
         // gas savings
         if (feeOn) {
             if (_kLast != 0) {
-                uint rootK = Math.sqrt(uint(_reserve0).mul(_reserve1));
-                uint rootKLast = Math.sqrt(_kLast);
+                uint rootK = SafeMath.sqrt(uint(_reserve0).mul(_reserve1));
+                uint rootKLast = SafeMath.sqrt(_kLast);
                 if (rootK > rootKLast) {
                     uint numerator = totalSupply.mul(rootK.sub(rootKLast));
                     uint denominator = rootK.mul(IMdexFactory(factory).feeToRate()).add(rootKLast);
@@ -415,11 +417,11 @@ contract MdexPair is IMdexPair, MdexERC20 {
         uint _totalSupply = totalSupply;
         // gas savings, must be defined here since totalSupply can update in _mintFee
         if (_totalSupply == 0) {
-            liquidity = Math.sqrt(amount0.mul(amount1)).sub(MINIMUM_LIQUIDITY);
+            liquidity = SafeMath.sqrt(amount0.mul(amount1)).sub(MINIMUM_LIQUIDITY);
             _mint(address(0), MINIMUM_LIQUIDITY);
             // permanently lock the first MINIMUM_LIQUIDITY tokens
         } else {
-            liquidity = Math.min(amount0.mul(_totalSupply) / _reserve0, amount1.mul(_totalSupply) / _reserve1);
+            liquidity = SafeMath.min(amount0.mul(_totalSupply) / _reserve0, amount1.mul(_totalSupply) / _reserve1);
         }
         require(liquidity > 0, 'MdexSwap: INSUFFICIENT_LIQUIDITY_MINTED');
         _mint(to, liquidity);
@@ -510,6 +512,18 @@ contract MdexPair is IMdexPair, MdexERC20 {
     function sync() external lock {
         _update(IERC20(token0).balanceOf(address(this)), IERC20(token1).balanceOf(address(this)), reserve0, reserve1);
     }
+
+    function price(address token) public view returns (uint256) {
+        if ((token0 != token && token1 != token) || 0 == reserve0 || 0 == reserve1) {
+            return 0;
+        }
+        if (token0 == token) {
+            return SafeMath.wad().mul(reserve1).div(reserve0);
+        } else {
+            return SafeMath.wad().mul(reserve0).div(reserve1);
+        }
+    }
+
 }
 
 contract MdexFactory is IMdexFactory, Ownable {
@@ -647,41 +661,147 @@ contract MdexFactory is IMdexFactory, Ownable {
     }
 }
 
-// a library for performing overflow-safe math, courtesy of DappHub (https://github.com/dapphub/ds-math)
-
 library SafeMath {
-    function add(uint x, uint y) internal pure returns (uint z) {
-        require((z = x + y) >= x, 'ds-math-add-overflow');
+    uint256 constant WAD = 10 ** 18;
+    uint256 constant RAY = 10 ** 27;
+
+    function wad() public pure returns (uint256) {
+        return WAD;
     }
 
-    function sub(uint x, uint y) internal pure returns (uint z) {
-        require((z = x - y) <= x, 'ds-math-sub-underflow');
+    function ray() public pure returns (uint256) {
+        return RAY;
     }
 
-    function mul(uint x, uint y) internal pure returns (uint z) {
-        require(y == 0 || (z = x * y) / y == x, 'ds-math-mul-overflow');
-    }
-}
+    function add(uint256 a, uint256 b) internal pure returns (uint256) {
+        uint256 c = a + b;
+        require(c >= a, "SafeMath: addition overflow");
 
-// a library for performing various math operations
-
-library Math {
-    function min(uint x, uint y) internal pure returns (uint z) {
-        z = x < y ? x : y;
+        return c;
     }
 
-    // babylonian method (https://en.wikipedia.org/wiki/Methods_of_computing_square_roots#Babylonian_method)
-    function sqrt(uint y) internal pure returns (uint z) {
-        if (y > 3) {
-            z = y;
-            uint x = y / 2 + 1;
-            while (x < z) {
-                z = x;
-                x = (y / x + x) / 2;
-            }
-        } else if (y != 0) {
-            z = 1;
+    function sub(uint256 a, uint256 b) internal pure returns (uint256) {
+        return sub(a, b, "SafeMath: subtraction overflow");
+    }
+
+    function sub(uint256 a, uint256 b, string memory errorMessage) internal pure returns (uint256) {
+        require(b <= a, errorMessage);
+        uint256 c = a - b;
+
+        return c;
+    }
+
+    function mul(uint256 a, uint256 b) internal pure returns (uint256) {
+        // Gas optimization: this is cheaper than requiring 'a' not being zero, but the
+        // benefit is lost if 'b' is also tested.
+        // See: https://github.com/OpenZeppelin/openzeppelin-contracts/pull/522
+        if (a == 0) {
+            return 0;
         }
+
+        uint256 c = a * b;
+        require(c / a == b, "SafeMath: multiplication overflow");
+
+        return c;
+    }
+
+    function div(uint256 a, uint256 b) internal pure returns (uint256) {
+        return div(a, b, "SafeMath: division by zero");
+    }
+
+    function div(uint256 a, uint256 b, string memory errorMessage) internal pure returns (uint256) {
+        // Solidity only automatically asserts when dividing by 0
+        require(b > 0, errorMessage);
+        uint256 c = a / b;
+        // assert(a == b * c + a % b); // There is no case in which this doesn't hold
+
+        return c;
+    }
+
+    function mod(uint256 a, uint256 b) internal pure returns (uint256) {
+        return mod(a, b, "SafeMath: modulo by zero");
+    }
+
+    function mod(uint256 a, uint256 b, string memory errorMessage) internal pure returns (uint256) {
+        require(b != 0, errorMessage);
+        return a % b;
+    }
+
+    function min(uint256 a, uint256 b) internal pure returns (uint256) {
+        return a <= b ? a : b;
+    }
+
+    function max(uint256 a, uint256 b) internal pure returns (uint256) {
+        return a >= b ? a : b;
+    }
+
+    function sqrt(uint256 a) internal pure returns (uint256 b) {
+        if (a > 3) {
+            b = a;
+            uint256 x = a / 2 + 1;
+            while (x < b) {
+                b = x;
+                x = (a / x + x) / 2;
+            }
+        } else if (a != 0) {
+            b = 1;
+        }
+    }
+
+    function wmul(uint256 a, uint256 b) internal pure returns (uint256) {
+        return mul(a, b) / WAD;
+    }
+
+    function wmulRound(uint256 a, uint256 b) internal pure returns (uint256) {
+        return add(mul(a, b), WAD / 2) / WAD;
+    }
+
+    function rmul(uint256 a, uint256 b) internal pure returns (uint256) {
+        return mul(a, b) / RAY;
+    }
+
+    function rmulRound(uint256 a, uint256 b) internal pure returns (uint256) {
+        return add(mul(a, b), RAY / 2) / RAY;
+    }
+
+    function wdiv(uint256 a, uint256 b) internal pure returns (uint256) {
+        return div(mul(a, WAD), b);
+    }
+
+    function wdivRound(uint256 a, uint256 b) internal pure returns (uint256) {
+        return add(mul(a, WAD), b / 2) / b;
+    }
+
+    function rdiv(uint256 a, uint256 b) internal pure returns (uint256) {
+        return div(mul(a, RAY), b);
+    }
+
+    function rdivRound(uint256 a, uint256 b) internal pure returns (uint256) {
+        return add(mul(a, RAY), b / 2) / b;
+    }
+
+    function wpow(uint256 x, uint256 n) internal pure returns (uint256) {
+        uint256 result = WAD;
+        while (n > 0) {
+            if (n % 2 != 0) {
+                result = wmul(result, x);
+            }
+            x = wmul(x, x);
+            n /= 2;
+        }
+        return result;
+    }
+
+    function rpow(uint256 x, uint256 n) internal pure returns (uint256) {
+        uint256 result = RAY;
+        while (n > 0) {
+            if (n % 2 != 0) {
+                result = rmul(result, x);
+            }
+            x = rmul(x, x);
+            n /= 2;
+        }
+        return result;
     }
 }
 

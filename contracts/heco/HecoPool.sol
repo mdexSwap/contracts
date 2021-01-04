@@ -61,7 +61,7 @@ contract HecoPool is Ownable {
     // multLP Token
     address public multLpToken;
     // dev address reward
-    uint256 public devReward;
+    uint256 public devReward = 10;
     // How many blocks are halved
     uint256 public halvingPeriod;
     // Halving cycle
@@ -83,8 +83,8 @@ contract HecoPool is Ownable {
         devAddress = _devAddress;
         mdxPerBlock = _mdxPerBlock;
         startBlock = _startBlock;
-        // About 30 days  52per
-        endBlock = _startBlock.add(961539);
+        // About 30 days  57per
+        endBlock = _startBlock.add(877193);
     }
 
     function setStartHalvingPeriod(uint256 _block) public onlyOwner {
@@ -191,23 +191,36 @@ contract HecoPool is Ownable {
         poolCorrespond[_pid] = _sid;
     }
 
-    function _mdxHalving() internal view returns (uint256){
+    function phase(uint256 blockNumber) public view returns (uint256) {
         if (startHalvingPeriod == 0 || halvingPeriod == 0) {
-            return 1;
-        }
-        uint256 parseHalving = block.number.sub(startHalvingPeriod).div(halvingPeriod);
-        return 2 ** parseHalving;
-    }
-
-    function getMdxBlockReward() public view returns (uint256){
-        if (halvingTimes == 0) {
-            return mdxPerBlock;
-        }
-        uint256 halving = _mdxHalving();
-        if (halving > halvingTimes) {
             return 0;
         }
-        return mdxPerBlock.div(halving);
+        if (blockNumber > startHalvingPeriod) {
+            return (blockNumber.sub(startHalvingPeriod).sub(1)).div(halvingPeriod);
+        }
+        return 0;
+    }
+
+    function reward(uint256 blockNumber) public view returns (uint256) {
+        uint256 _phase = phase(blockNumber);
+        if (_phase > halvingTimes) {
+            return 0;
+        }
+        return mdxPerBlock.div(2 ** _phase);
+    }
+
+    function getMdxBlockReward(uint256 _blockNumber, uint256 _lastRewardBlock) public view returns (uint256) {
+        uint256 blockReward = 0;
+        uint256 n = phase(_lastRewardBlock);
+        uint256 m = phase(_blockNumber);
+        while (n < m) {
+            n++;
+            uint256 r = n.mul(halvingPeriod).add(startHalvingPeriod);
+            blockReward = blockReward.add((r.sub(_lastRewardBlock)).mul(reward(r)));
+            _lastRewardBlock = r;
+        }
+        blockReward = blockReward.add((_blockNumber.sub(_lastRewardBlock)).mul(reward(_blockNumber)));
+        return blockReward;
     }
 
     // Update reward variables for all pools. Be careful of gas spending!
@@ -239,16 +252,15 @@ contract HecoPool is Ownable {
             }
         }
         uint256 number = block.number > endBlock ? endBlock : block.number;
-        uint256 multiplier = number.sub(pool.lastRewardBlock);
-        uint256 blockReward = getMdxBlockReward();
+        uint256 blockReward = getMdxBlockReward(number, pool.lastRewardBlock);
         if (blockReward <= 0) {
             return;
         }
-        uint256 mdxReward = multiplier.mul(blockReward).mul(pool.allocPoint).div(totalAllocPoint);
+        uint256 mdxReward = blockReward.mul(pool.allocPoint).div(totalAllocPoint);
         uint256 devGet;
         bool devRet = true;
         bool minRet = true;
-        if (devReward != 0) {
+        if (devReward > 0) {
             devGet = mdxReward.div(devReward);
             devRet = mdx.mint(devAddress, devGet);
         }
@@ -284,9 +296,8 @@ contract HecoPool is Ownable {
             accMultLpPerShare = accMultLpPerShare.add(TokenPending.mul(1e12).div(pool.totalAmount));
             uint256 userPending = user.amount.mul(accMultLpPerShare).div(1e12).sub(user.multLpRewardDebt);
             if (number > pool.lastRewardBlock) {
-                uint256 multiplier = number.sub(pool.lastRewardBlock);
-                uint256 blockReward = getMdxBlockReward();
-                uint256 mdxReward = multiplier.mul(blockReward).mul(pool.allocPoint).div(totalAllocPoint);
+                uint256 blockReward = getMdxBlockReward(number, pool.lastRewardBlock);
+                uint256 mdxReward = blockReward.mul(pool.allocPoint).div(totalAllocPoint);
                 uint256 devGet;
                 if (devReward > 0) {
                     devGet = mdxReward.div(devReward);
@@ -309,9 +320,8 @@ contract HecoPool is Ownable {
         uint256 number = block.number > endBlock ? endBlock : block.number;
         if (user.amount > 0) {
             if (number > pool.lastRewardBlock) {
-                uint256 multiplier = block.number.sub(pool.lastRewardBlock);
-                uint256 blockReward = getMdxBlockReward();
-                uint256 mdxReward = multiplier.mul(blockReward).mul(pool.allocPoint).div(totalAllocPoint);
+                uint256 blockReward = getMdxBlockReward(number, pool.lastRewardBlock);
+                uint256 mdxReward = blockReward.mul(pool.allocPoint).div(totalAllocPoint);
                 uint256 devGet;
                 if (devReward > 0) {
                     devGet = mdxReward.div(devReward);

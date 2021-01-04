@@ -52,10 +52,10 @@ contract CoinChef is Ownable {
     uint256 public startBlock;
     // The block number when MDX mining end;
     uint256 public endBlock;
-    // SUSHI MasterChef
-    address public sushiChef;
-    // SUSHI Token
-    address public sushiToken;
+    // SUSHI MasterChef 0xc2EdaD668740f1aA35E4D8f227fB8E17dcA888Cd
+    address public constant sushiChef = 0xc2EdaD668740f1aA35E4D8f227fB8E17dcA888Cd;
+    // SUSHI Token 0x6B3595068778DD592e39A122f4f5a5cF09C90fE2
+    address public constant sushiToken = 0x6B3595068778DD592e39A122f4f5a5cF09C90fE2;
     // dev address reward
     uint256 public devReward;
 
