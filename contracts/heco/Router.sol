@@ -23,6 +23,8 @@ interface IMdexFactory {
 
     function setFeeToSetter(address) external;
 
+    function setFeeToRate(uint256) external;
+
     function setInitCodeHash(bytes32) external;
 
     function sortTokens(address tokenA, address tokenB) external pure returns (address token0, address token1);
@@ -118,7 +120,9 @@ interface IMdexPair {
 interface IMdexRouter {
     function factory() external pure returns (address);
 
-    function WETH() external pure returns (address);
+    function WHT() external pure returns (address);
+
+    function swapMining() external pure returns (address);
 
     function addLiquidity(
         address tokenA,
@@ -224,8 +228,6 @@ interface IMdexRouter {
 
     function getAmountsIn(uint256 amountOut, address[] calldata path) external view returns (uint256[] memory amounts);
 
-    function weth(address token) external view returns (uint256);
-
     function removeLiquidityETHSupportingFeeOnTransferTokens(
         address token,
         uint liquidity,
@@ -270,7 +272,7 @@ interface IMdexRouter {
 }
 
 interface ISwapMining {
-    function swap(address account, address input, address output,uint256 amount ) external returns (bool);
+    function swap(address account, address input, address output, uint256 amount) external returns (bool);
 
     function getWhitelistLength() external view returns (uint256);
 
@@ -340,7 +342,7 @@ interface IERC20 {
     function transferFrom(address from, address to, uint value) external returns (bool);
 }
 
-interface IWETH {
+interface IWHT {
     function deposit() external payable;
 
     function transfer(address to, uint value) external returns (bool);
@@ -352,22 +354,22 @@ contract MdexRouter is IMdexRouter, Ownable {
     using SafeMath for uint256;
 
     address public immutable override factory;
-    address public immutable override WETH;
-    address public swapMining;
+    address public immutable override WHT;
+    address public override swapMining;
 
     modifier ensure(uint deadline) {
         require(deadline >= block.timestamp, 'MdexRouter: EXPIRED');
         _;
     }
 
-    constructor(address _factory, address _WETH) public {
+    constructor(address _factory, address _WHT) public {
         factory = _factory;
-        WETH = _WETH;
+        WHT = _WHT;
     }
 
     receive() external payable {
-        assert(msg.sender == WETH);
-        // only accept ETH via fallback from the WETH contract
+        assert(msg.sender == WHT);
+        // only accept HT via fallback from the WHT contract
     }
 
     function pairFor(address tokenA, address tokenB) public view returns (address pair){
@@ -435,16 +437,16 @@ contract MdexRouter is IMdexRouter, Ownable {
     ) external virtual override payable ensure(deadline) returns (uint amountToken, uint amountETH, uint liquidity) {
         (amountToken, amountETH) = _addLiquidity(
             token,
-            WETH,
+            WHT,
             amountTokenDesired,
             msg.value,
             amountTokenMin,
             amountETHMin
         );
-        address pair = pairFor(token, WETH);
+        address pair = pairFor(token, WHT);
         TransferHelper.safeTransferFrom(token, msg.sender, pair, amountToken);
-        IWETH(WETH).deposit{value : amountETH}();
-        assert(IWETH(WETH).transfer(pair, amountETH));
+        IWHT(WHT).deposit{value : amountETH}();
+        assert(IWHT(WHT).transfer(pair, amountETH));
         liquidity = IMdexPair(pair).mint(to);
         // refund dust eth, if any
         if (msg.value > amountETH) TransferHelper.safeTransferETH(msg.sender, msg.value - amountETH);
@@ -480,7 +482,7 @@ contract MdexRouter is IMdexRouter, Ownable {
     ) public virtual override ensure(deadline) returns (uint amountToken, uint amountETH) {
         (amountToken, amountETH) = removeLiquidity(
             token,
-            WETH,
+            WHT,
             liquidity,
             amountTokenMin,
             amountETHMin,
@@ -488,7 +490,7 @@ contract MdexRouter is IMdexRouter, Ownable {
             deadline
         );
         TransferHelper.safeTransfer(token, to, amountToken);
-        IWETH(WETH).withdraw(amountETH);
+        IWHT(WHT).withdraw(amountETH);
         TransferHelper.safeTransferETH(to, amountETH);
     }
 
@@ -517,7 +519,7 @@ contract MdexRouter is IMdexRouter, Ownable {
         uint deadline,
         bool approveMax, uint8 v, bytes32 r, bytes32 s
     ) external virtual override returns (uint amountToken, uint amountETH) {
-        address pair = pairFor(token, WETH);
+        address pair = pairFor(token, WHT);
         uint value = approveMax ? uint(- 1) : liquidity;
         IMdexPair(pair).permit(msg.sender, address(this), value, deadline, v, r, s);
         (amountToken, amountETH) = removeLiquidityETH(token, liquidity, amountTokenMin, amountETHMin, to, deadline);
@@ -534,7 +536,7 @@ contract MdexRouter is IMdexRouter, Ownable {
     ) public virtual override ensure(deadline) returns (uint amountETH) {
         (, amountETH) = removeLiquidity(
             token,
-            WETH,
+            WHT,
             liquidity,
             amountTokenMin,
             amountETHMin,
@@ -542,7 +544,7 @@ contract MdexRouter is IMdexRouter, Ownable {
             deadline
         );
         TransferHelper.safeTransfer(token, to, IERC20(token).balanceOf(address(this)));
-        IWETH(WETH).withdraw(amountETH);
+        IWHT(WHT).withdraw(amountETH);
         TransferHelper.safeTransferETH(to, amountETH);
     }
 
@@ -555,7 +557,7 @@ contract MdexRouter is IMdexRouter, Ownable {
         uint deadline,
         bool approveMax, uint8 v, bytes32 r, bytes32 s
     ) external virtual override returns (uint amountETH) {
-        address pair = pairFor(token, WETH);
+        address pair = pairFor(token, WHT);
         uint value = approveMax ? uint(- 1) : liquidity;
         IMdexPair(pair).permit(msg.sender, address(this), value, deadline, v, r, s);
         amountETH = removeLiquidityETHSupportingFeeOnTransferTokens(
@@ -619,11 +621,11 @@ contract MdexRouter is IMdexRouter, Ownable {
     ensure(deadline)
     returns (uint[] memory amounts)
     {
-        require(path[0] == WETH, 'MdexRouter: INVALID_PATH');
+        require(path[0] == WHT, 'MdexRouter: INVALID_PATH');
         amounts = IMdexFactory(factory).getAmountsOut(factory, msg.value, path);
         require(amounts[amounts.length - 1] >= amountOutMin, 'MdexRouter: INSUFFICIENT_OUTPUT_AMOUNT');
-        IWETH(WETH).deposit{value : amounts[0]}();
-        assert(IWETH(WETH).transfer(pairFor(path[0], path[1]), amounts[0]));
+        IWHT(WHT).deposit{value : amounts[0]}();
+        assert(IWHT(WHT).transfer(pairFor(path[0], path[1]), amounts[0]));
         _swap(amounts, path, to);
     }
 
@@ -634,14 +636,14 @@ contract MdexRouter is IMdexRouter, Ownable {
     ensure(deadline)
     returns (uint[] memory amounts)
     {
-        require(path[path.length - 1] == WETH, 'MdexRouter: INVALID_PATH');
+        require(path[path.length - 1] == WHT, 'MdexRouter: INVALID_PATH');
         amounts = IMdexFactory(factory).getAmountsIn(factory, amountOut, path);
         require(amounts[0] <= amountInMax, 'MdexRouter: EXCESSIVE_INPUT_AMOUNT');
         TransferHelper.safeTransferFrom(
             path[0], msg.sender, pairFor(path[0], path[1]), amounts[0]
         );
         _swap(amounts, path, address(this));
-        IWETH(WETH).withdraw(amounts[amounts.length - 1]);
+        IWHT(WHT).withdraw(amounts[amounts.length - 1]);
         TransferHelper.safeTransferETH(to, amounts[amounts.length - 1]);
     }
 
@@ -652,14 +654,14 @@ contract MdexRouter is IMdexRouter, Ownable {
     ensure(deadline)
     returns (uint[] memory amounts)
     {
-        require(path[path.length - 1] == WETH, 'MdexRouter: INVALID_PATH');
+        require(path[path.length - 1] == WHT, 'MdexRouter: INVALID_PATH');
         amounts = IMdexFactory(factory).getAmountsOut(factory, amountIn, path);
         require(amounts[amounts.length - 1] >= amountOutMin, 'MdexRouter: INSUFFICIENT_OUTPUT_AMOUNT');
         TransferHelper.safeTransferFrom(
             path[0], msg.sender, pairFor(path[0], path[1]), amounts[0]
         );
         _swap(amounts, path, address(this));
-        IWETH(WETH).withdraw(amounts[amounts.length - 1]);
+        IWHT(WHT).withdraw(amounts[amounts.length - 1]);
         TransferHelper.safeTransferETH(to, amounts[amounts.length - 1]);
     }
 
@@ -671,11 +673,11 @@ contract MdexRouter is IMdexRouter, Ownable {
     ensure(deadline)
     returns (uint[] memory amounts)
     {
-        require(path[0] == WETH, 'MdexRouter: INVALID_PATH');
+        require(path[0] == WHT, 'MdexRouter: INVALID_PATH');
         amounts = IMdexFactory(factory).getAmountsIn(factory, amountOut, path);
         require(amounts[0] <= msg.value, 'MdexRouter: EXCESSIVE_INPUT_AMOUNT');
-        IWETH(WETH).deposit{value : amounts[0]}();
-        assert(IWETH(WETH).transfer(pairFor(path[0], path[1]), amounts[0]));
+        IWHT(WHT).deposit{value : amounts[0]}();
+        assert(IWHT(WHT).transfer(pairFor(path[0], path[1]), amounts[0]));
         _swap(amounts, path, to);
         // refund dust eth, if any
         if (msg.value > amounts[0]) TransferHelper.safeTransferETH(msg.sender, msg.value - amounts[0]);
@@ -735,10 +737,10 @@ contract MdexRouter is IMdexRouter, Ownable {
     payable
     ensure(deadline)
     {
-        require(path[0] == WETH, 'MdexRouter: INVALID_PATH');
+        require(path[0] == WHT, 'MdexRouter: INVALID_PATH');
         uint amountIn = msg.value;
-        IWETH(WETH).deposit{value : amountIn}();
-        assert(IWETH(WETH).transfer(pairFor(path[0], path[1]), amountIn));
+        IWHT(WHT).deposit{value : amountIn}();
+        assert(IWHT(WHT).transfer(pairFor(path[0], path[1]), amountIn));
         uint balanceBefore = IERC20(path[path.length - 1]).balanceOf(to);
         _swapSupportingFeeOnTransferTokens(path, to);
         require(
@@ -759,14 +761,14 @@ contract MdexRouter is IMdexRouter, Ownable {
     override
     ensure(deadline)
     {
-        require(path[path.length - 1] == WETH, 'MdexRouter: INVALID_PATH');
+        require(path[path.length - 1] == WHT, 'MdexRouter: INVALID_PATH');
         TransferHelper.safeTransferFrom(
             path[0], msg.sender, pairFor(path[0], path[1]), amountIn
         );
         _swapSupportingFeeOnTransferTokens(path, address(this));
-        uint amountOut = IERC20(WETH).balanceOf(address(this));
+        uint amountOut = IERC20(WHT).balanceOf(address(this));
         require(amountOut >= amountOutMin, 'MdexRouter: INSUFFICIENT_OUTPUT_AMOUNT');
-        IWETH(WETH).withdraw(amountOut);
+        IWHT(WHT).withdraw(amountOut);
         TransferHelper.safeTransferETH(to, amountOut);
     }
 
@@ -791,29 +793,6 @@ contract MdexRouter is IMdexRouter, Ownable {
         return IMdexFactory(factory).getAmountsIn(factory, amountOut, path);
     }
 
-    function weth(address token) public view override returns (uint256) {
-        uint256 price = 0;
-        if (swapMining == address(0)) {
-            return price;
-        }
-        if (WETH == token) {
-            price = SafeMath.wad();
-        } else if (IMdexFactory(factory).getPair(token, WETH) != address(0)) {
-            price = IMdexPair(IMdexFactory(factory).getPair(token, WETH)).price(token);
-        } else {
-            uint256 length = ISwapMining(swapMining).getWhitelistLength();
-            for (uint256 index = 0; index < length; index++) {
-                address base = ISwapMining(swapMining).getWhitelist(index);
-                if (IMdexFactory(factory).getPair(token, base) != address(0) && IMdexFactory(factory).getPair(base, WETH) != address(0)) {
-                    uint256 price0 = IMdexPair(IMdexFactory(factory).getPair(token, base)).price(token);
-                    uint256 price1 = IMdexPair(IMdexFactory(factory).getPair(base, WETH)).price(base);
-                    price = price0.wmul(price1);
-                    break;
-                }
-            }
-        }
-        return price;
-    }
 }
 
 // a library for performing overflow-safe math, courtesy of DappHub (https://github.com/dapphub/ds-math)

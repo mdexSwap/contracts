@@ -9,7 +9,7 @@ import "@openzeppelin/contracts/math/SafeMath.sol";
 import "./interface/IMdx.sol";
 import "./interface/IMasterChef.sol";
 
-// CoinChef is the master of MDX. He can make MDXToken and he is a fair guy.
+
 contract CoinChef is Ownable {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
@@ -36,8 +36,6 @@ contract CoinChef is Ownable {
 
     // The MDX TOKEN!
     IMdx public mdx;
-    // Dev address.
-    address public devAddress;
     // MDX tokens created per block.
     uint256 public mdxPerBlock;
     // Info of each pool.
@@ -56,8 +54,6 @@ contract CoinChef is Ownable {
     address public constant sushiChef = 0xc2EdaD668740f1aA35E4D8f227fB8E17dcA888Cd;
     // SUSHI Token 0x6B3595068778DD592e39A122f4f5a5cF09C90fE2
     address public constant sushiToken = 0x6B3595068778DD592e39A122f4f5a5cF09C90fE2;
-    // dev address reward
-    uint256 public devReward;
 
     event Deposit(address indexed user, uint256 indexed pid, uint256 amount);
     event Withdraw(address indexed user, uint256 indexed pid, uint256 amount);
@@ -65,21 +61,13 @@ contract CoinChef is Ownable {
 
     constructor(
         IMdx _mdx,
-        address _devAddress,
         uint256 _mdxPerBlock,
         uint256 _startBlock
     ) public {
         mdx = _mdx;
-        devAddress = _devAddress;
         mdxPerBlock = _mdxPerBlock;
         startBlock = _startBlock;
         endBlock = _startBlock.add(200000);
-    }
-
-    function setSushi(address _sushiToken, address _sushiChef) public onlyOwner {
-        require(_sushiToken != address(0) && _sushiChef != address(0), "is the zero address");
-        sushiToken = _sushiToken;
-        sushiChef = _sushiChef;
     }
 
     function poolLength() public view returns (uint256) {
@@ -105,9 +93,6 @@ contract CoinChef is Ownable {
         return EnumerableSet.at(_sushiLP, _pid);
     }
 
-    function setDevReward(uint256 _proportion) public onlyOwner {
-        devReward = _proportion;
-    }
     // Add a new lp to the pool. Can only be called by the owner.
     // XXX DO NOT add the same LP token more than once. Rewards will be messed up if you do.
     function add(uint256 _allocPoint, IERC20 _lpToken, bool _withUpdate) public onlyOwner {
@@ -173,18 +158,9 @@ contract CoinChef is Ownable {
         uint256 number = block.number > endBlock ? endBlock : block.number;
         uint256 multiplier = number.sub(pool.lastRewardBlock);
         uint256 mdxReward = multiplier.mul(mdxPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
-        uint256 devGet;
-        bool devRet = true;
-        bool minRet = true;
-        if (devReward != 0) {
-            devGet = mdxReward.div(devReward);
-            devRet = mdx.mint(devAddress, devGet);
-        }
-        if (mdxReward.sub(devGet) > 0) {
-            minRet = mdx.mint(address(this), mdxReward.sub(devGet));
-        }
-        if (devRet && minRet) {
-            pool.accMdxPerShare = pool.accMdxPerShare.add((mdxReward.sub(devGet)).mul(1e12).div(lpSupply));
+        bool minRet = mdx.mint(address(this), mdxReward);
+        if (minRet) {
+            pool.accMdxPerShare = pool.accMdxPerShare.add(mdxReward.mul(1e12).div(lpSupply));
         }
         pool.lastRewardBlock = block.number;
     }
@@ -214,11 +190,7 @@ contract CoinChef is Ownable {
             if (number > pool.lastRewardBlock) {
                 uint256 multiplier = number.sub(pool.lastRewardBlock);
                 uint256 mdxReward = multiplier.mul(mdxPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
-                uint256 devGet;
-                if (devReward > 0) {
-                    devGet = mdxReward.div(devReward);
-                }
-                accMdxPerShare = accMdxPerShare.add(mdxReward.sub(devGet).mul(1e12).div(pool.totalAmount));
+                accMdxPerShare = accMdxPerShare.add(mdxReward.mul(1e12).div(pool.totalAmount));
                 return (user.amount.mul(accMdxPerShare).div(1e12).sub(user.rewardDebt), userPending);
             }
             if (number == pool.lastRewardBlock) {
@@ -238,11 +210,7 @@ contract CoinChef is Ownable {
             if (number > pool.lastRewardBlock) {
                 uint256 multiplier = block.number.sub(pool.lastRewardBlock);
                 uint256 mdxReward = multiplier.mul(mdxPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
-                uint256 devGet;
-                if (devReward > 0) {
-                    devGet = mdxReward.div(devReward);
-                }
-                accMdxPerShare = accMdxPerShare.add(mdxReward.sub(devGet).mul(1e12).div(lpSupply));
+                accMdxPerShare = accMdxPerShare.add(mdxReward.mul(1e12).div(lpSupply));
                 return user.amount.mul(accMdxPerShare).div(1e12).sub(user.rewardDebt);
             }
             if (number == pool.lastRewardBlock) {
@@ -420,9 +388,4 @@ contract CoinChef is Ownable {
         }
     }
 
-    // Update dev address by the previous dev.
-    function dev(address _devAddress) public {
-        require(msg.sender == devAddress, "dev: wut?");
-        devAddress = _devAddress;
-    }
 }

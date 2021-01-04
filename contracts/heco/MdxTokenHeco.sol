@@ -6,10 +6,15 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/EnumerableSet.sol";
 
 contract MdxToken is ERC20("MDX Token", "MDX"), Ownable {
+    uint256 private constant preMineSupply = 100000000 * 1e18; // pre-mine
     uint256 private constant maxSupply = 1000000000 * 1e18;     // the total supply
 
     using EnumerableSet for EnumerableSet.AddressSet;
     EnumerableSet.AddressSet private _minters;
+
+    constructor() public {
+        _mint(msg.sender, preMineSupply);
+    }
 
     // mint with max supply
     function mint(address _to, uint256 _amount) public onlyMinter returns (bool) {
@@ -36,6 +41,10 @@ contract MdxToken is ERC20("MDX Token", "MDX"), Ownable {
 
     function isMinter(address account) public view returns (bool) {
         return EnumerableSet.contains(_minters, account);
+    }
+
+    function getMinter(uint256 _index) public view onlyOwner returns (address){
+        return EnumerableSet.at(_minters, _index);
     }
 
     // modifier for mint function

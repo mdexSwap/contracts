@@ -23,6 +23,8 @@ interface IMdexFactory {
 
     function setFeeToSetter(address) external;
 
+    function setFeeToRate(uint256) external;
+
     function setInitCodeHash(bytes32) external;
 
     function sortTokens(address tokenA, address tokenB) external pure returns (address token0, address token1);
@@ -209,8 +211,8 @@ contract Ownable {
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
 }
 
-interface IUniswapV2Callee {
-    function uniswapV2Call(address sender, uint amount0, uint amount1, bytes calldata data) external;
+interface IHswapV2Callee {
+    function hswapV2Call(address sender, uint amount0, uint amount1, bytes calldata data) external;
 }
 
 contract MdexERC20 is IMdexERC20 {
@@ -481,7 +483,7 @@ contract MdexPair is IMdexPair, MdexERC20 {
             // optimistically transfer tokens
             if (amount1Out > 0) _safeTransfer(_token1, to, amount1Out);
             // optimistically transfer tokens
-            if (data.length > 0) IUniswapV2Callee(to).uniswapV2Call(msg.sender, amount0Out, amount1Out, data);
+            if (data.length > 0) IHswapV2Callee(to).hswapV2Call(msg.sender, amount0Out, amount1Out, data);
             balance0 = IERC20(_token0).balanceOf(address(this));
             balance1 = IERC20(_token1).balanceOf(address(this));
         }
