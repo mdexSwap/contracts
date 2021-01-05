@@ -511,9 +511,9 @@ interface IMdexFactory {
 
     function sortTokens(address tokenA, address tokenB) external pure returns (address token0, address token1);
 
-    function pairFor(address factory, address tokenA, address tokenB) external view returns (address pair);
+    function pairFor(address tokenA, address tokenB) external view returns (address pair);
 
-    function getReserves(address factory, address tokenA, address tokenB) external view returns (uint256 reserveA, uint256 reserveB);
+    function getReserves(address tokenA, address tokenB) external view returns (uint256 reserveA, uint256 reserveB);
 
     function quote(uint256 amountA, uint256 reserveA, uint256 reserveB) external pure returns (uint256 amountB);
 
@@ -521,9 +521,9 @@ interface IMdexFactory {
 
     function getAmountIn(uint256 amountOut, uint256 reserveIn, uint256 reserveOut) external view returns (uint256 amountIn);
 
-    function getAmountsOut(address factory, uint256 amountIn, address[] calldata path) external view returns (uint256[] memory amounts);
+    function getAmountsOut(uint256 amountIn, address[] calldata path) external view returns (uint256[] memory amounts);
 
-    function getAmountsIn(address factory, uint256 amountOut, address[] calldata path) external view returns (uint256[] memory amounts);
+    function getAmountsIn(uint256 amountOut, address[] calldata path) external view returns (uint256[] memory amounts);
 }
 
 interface IMdexPair {
@@ -609,7 +609,7 @@ contract SwapMining is Ownable {
     //开始区块
     uint256 public startBlock;
     //多少个区块开始减半
-    uint256 public halvingPeriod = 1900000;
+    uint256 public halvingPeriod = 1728000;
     //减半的周期
     uint256 public halvingTimes;
     //总权重
@@ -714,6 +714,7 @@ contract SwapMining is Ownable {
     }
 
     function getWhitelist(uint256 _index) public view returns (address){
+        require(_index <= getWhitelistLength() - 1, "SwapMining: index out of bounds");
         return EnumerableSet.at(_whitelist, _index);
     }
 
@@ -908,7 +909,6 @@ contract SwapMining is Ownable {
         _;
     }
 
-    //oracle 一个token等于多少个anchorToken(WHT,HUSD,ETH等)
     function getPrice(address token, address anchorToken) public view returns (uint256) {
         uint256 price = 0;
         uint256 anchorDecimal = 10 ** uint256(IERC20(anchorToken).decimals());

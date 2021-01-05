@@ -29,9 +29,9 @@ interface IMdexFactory {
 
     function sortTokens(address tokenA, address tokenB) external pure returns (address token0, address token1);
 
-    function pairFor(address factory, address tokenA, address tokenB) external view returns (address pair);
+    function pairFor(address tokenA, address tokenB) external view returns (address pair);
 
-    function getReserves(address factory, address tokenA, address tokenB) external view returns (uint256 reserveA, uint256 reserveB);
+    function getReserves(address tokenA, address tokenB) external view returns (uint256 reserveA, uint256 reserveB);
 
     function quote(uint256 amountA, uint256 reserveA, uint256 reserveB) external pure returns (uint256 amountB);
 
@@ -39,9 +39,9 @@ interface IMdexFactory {
 
     function getAmountIn(uint256 amountOut, uint256 reserveIn, uint256 reserveOut) external view returns (uint256 amountIn);
 
-    function getAmountsOut(address factory, uint256 amountIn, address[] calldata path) external view returns (uint256[] memory amounts);
+    function getAmountsOut(uint256 amountIn, address[] calldata path) external view returns (uint256[] memory amounts);
 
-    function getAmountsIn(address factory, uint256 amountOut, address[] calldata path) external view returns (uint256[] memory amounts);
+    function getAmountsIn(uint256 amountOut, address[] calldata path) external view returns (uint256[] memory amounts);
 }
 
 interface IMdexPair {
@@ -273,10 +273,6 @@ interface IMdexRouter {
 
 interface ISwapMining {
     function swap(address account, address input, address output, uint256 amount) external returns (bool);
-
-    function getWhitelistLength() external view returns (uint256);
-
-    function getWhitelist(uint256) external view returns (address);
 }
 
 contract Ownable {
@@ -373,7 +369,7 @@ contract MdexRouter is IMdexRouter, Ownable {
     }
 
     function pairFor(address tokenA, address tokenB) public view returns (address pair){
-        pair = IMdexFactory(factory).pairFor(factory, tokenA, tokenB);
+        pair = IMdexFactory(factory).pairFor(tokenA, tokenB);
     }
 
     function setSwapMining(address _swapMininng) public onlyOwner {
@@ -393,7 +389,7 @@ contract MdexRouter is IMdexRouter, Ownable {
         if (IMdexFactory(factory).getPair(tokenA, tokenB) == address(0)) {
             IMdexFactory(factory).createPair(tokenA, tokenB);
         }
-        (uint reserveA, uint reserveB) = IMdexFactory(factory).getReserves(factory, tokenA, tokenB);
+        (uint reserveA, uint reserveB) = IMdexFactory(factory).getReserves(tokenA, tokenB);
         if (reserveA == 0 && reserveB == 0) {
             (amountA, amountB) = (amountADesired, amountBDesired);
         } else {
@@ -590,7 +586,7 @@ contract MdexRouter is IMdexRouter, Ownable {
         address to,
         uint deadline
     ) external virtual override ensure(deadline) returns (uint[] memory amounts) {
-        amounts = IMdexFactory(factory).getAmountsOut(factory, amountIn, path);
+        amounts = IMdexFactory(factory).getAmountsOut(amountIn, path);
         require(amounts[amounts.length - 1] >= amountOutMin, 'MdexRouter: INSUFFICIENT_OUTPUT_AMOUNT');
         TransferHelper.safeTransferFrom(
             path[0], msg.sender, pairFor(path[0], path[1]), amounts[0]
@@ -605,7 +601,7 @@ contract MdexRouter is IMdexRouter, Ownable {
         address to,
         uint deadline
     ) external virtual override ensure(deadline) returns (uint[] memory amounts) {
-        amounts = IMdexFactory(factory).getAmountsIn(factory, amountOut, path);
+        amounts = IMdexFactory(factory).getAmountsIn(amountOut, path);
         require(amounts[0] <= amountInMax, 'MdexRouter: EXCESSIVE_INPUT_AMOUNT');
         TransferHelper.safeTransferFrom(
             path[0], msg.sender, pairFor(path[0], path[1]), amounts[0]
@@ -622,7 +618,7 @@ contract MdexRouter is IMdexRouter, Ownable {
     returns (uint[] memory amounts)
     {
         require(path[0] == WHT, 'MdexRouter: INVALID_PATH');
-        amounts = IMdexFactory(factory).getAmountsOut(factory, msg.value, path);
+        amounts = IMdexFactory(factory).getAmountsOut(msg.value, path);
         require(amounts[amounts.length - 1] >= amountOutMin, 'MdexRouter: INSUFFICIENT_OUTPUT_AMOUNT');
         IWHT(WHT).deposit{value : amounts[0]}();
         assert(IWHT(WHT).transfer(pairFor(path[0], path[1]), amounts[0]));
@@ -637,7 +633,7 @@ contract MdexRouter is IMdexRouter, Ownable {
     returns (uint[] memory amounts)
     {
         require(path[path.length - 1] == WHT, 'MdexRouter: INVALID_PATH');
-        amounts = IMdexFactory(factory).getAmountsIn(factory, amountOut, path);
+        amounts = IMdexFactory(factory).getAmountsIn(amountOut, path);
         require(amounts[0] <= amountInMax, 'MdexRouter: EXCESSIVE_INPUT_AMOUNT');
         TransferHelper.safeTransferFrom(
             path[0], msg.sender, pairFor(path[0], path[1]), amounts[0]
@@ -655,7 +651,7 @@ contract MdexRouter is IMdexRouter, Ownable {
     returns (uint[] memory amounts)
     {
         require(path[path.length - 1] == WHT, 'MdexRouter: INVALID_PATH');
-        amounts = IMdexFactory(factory).getAmountsOut(factory, amountIn, path);
+        amounts = IMdexFactory(factory).getAmountsOut(amountIn, path);
         require(amounts[amounts.length - 1] >= amountOutMin, 'MdexRouter: INSUFFICIENT_OUTPUT_AMOUNT');
         TransferHelper.safeTransferFrom(
             path[0], msg.sender, pairFor(path[0], path[1]), amounts[0]
@@ -674,7 +670,7 @@ contract MdexRouter is IMdexRouter, Ownable {
     returns (uint[] memory amounts)
     {
         require(path[0] == WHT, 'MdexRouter: INVALID_PATH');
-        amounts = IMdexFactory(factory).getAmountsIn(factory, amountOut, path);
+        amounts = IMdexFactory(factory).getAmountsIn(amountOut, path);
         require(amounts[0] <= msg.value, 'MdexRouter: EXCESSIVE_INPUT_AMOUNT');
         IWHT(WHT).deposit{value : amounts[0]}();
         assert(IWHT(WHT).transfer(pairFor(path[0], path[1]), amounts[0]));
@@ -786,11 +782,11 @@ contract MdexRouter is IMdexRouter, Ownable {
     }
 
     function getAmountsOut(uint256 amountIn, address[] memory path) public view override returns (uint256[] memory amounts){
-        return IMdexFactory(factory).getAmountsOut(factory, amountIn, path);
+        return IMdexFactory(factory).getAmountsOut(amountIn, path);
     }
 
     function getAmountsIn(uint256 amountOut, address[] memory path) public view override returns (uint256[] memory amounts){
-        return IMdexFactory(factory).getAmountsIn(factory, amountOut, path);
+        return IMdexFactory(factory).getAmountsIn(amountOut, path);
     }
 
 }

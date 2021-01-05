@@ -29,9 +29,9 @@ interface IMdexFactory {
 
     function sortTokens(address tokenA, address tokenB) external pure returns (address token0, address token1);
 
-    function pairFor(address factory, address tokenA, address tokenB) external view returns (address pair);
+    function pairFor(address tokenA, address tokenB) external view returns (address pair);
 
-    function getReserves(address factory, address tokenA, address tokenB) external view returns (uint256 reserveA, uint256 reserveB);
+    function getReserves(address tokenA, address tokenB) external view returns (uint256 reserveA, uint256 reserveB);
 
     function quote(uint256 amountA, uint256 reserveA, uint256 reserveB) external pure returns (uint256 amountB);
 
@@ -39,9 +39,9 @@ interface IMdexFactory {
 
     function getAmountIn(uint256 amountOut, uint256 reserveIn, uint256 reserveOut) external view returns (uint256 amountIn);
 
-    function getAmountsOut(address factory, uint256 amountIn, address[] calldata path) external view returns (uint256[] memory amounts);
+    function getAmountsOut(uint256 amountIn, address[] calldata path) external view returns (uint256[] memory amounts);
 
-    function getAmountsIn(address factory, uint256 amountOut, address[] calldata path) external view returns (uint256[] memory amounts);
+    function getAmountsIn(uint256 amountOut, address[] calldata path) external view returns (uint256[] memory amounts);
 }
 
 interface IMdexPair {
@@ -169,46 +169,6 @@ interface IERC20 {
     function transfer(address to, uint value) external returns (bool);
 
     function transferFrom(address from, address to, uint value) external returns (bool);
-}
-
-contract Ownable {
-    address private _owner;
-
-    constructor () internal {
-        _owner = msg.sender;
-        emit OwnershipTransferred(address(0), _owner);
-    }
-
-    function owner() public view returns (address) {
-        return _owner;
-    }
-
-    function isOwner(address account) public view returns (bool) {
-        return account == _owner;
-    }
-
-    function renounceOwnership() public onlyOwner {
-        emit OwnershipTransferred(_owner, address(0));
-        _owner = address(0);
-    }
-
-    function _transferOwnership(address newOwner) internal {
-        require(newOwner != address(0), "Ownable: new owner is the zero address");
-        emit OwnershipTransferred(_owner, newOwner);
-        _owner = newOwner;
-    }
-
-    function transferOwnership(address newOwner) public onlyOwner {
-        _transferOwnership(newOwner);
-    }
-
-
-    modifier onlyOwner() {
-        require(isOwner(msg.sender), "Ownable: caller is not the owner");
-        _;
-    }
-
-    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
 }
 
 interface IHswapV2Callee {
@@ -528,12 +488,13 @@ contract MdexPair is IMdexPair, MdexERC20 {
 
 }
 
-contract MdexFactory is IMdexFactory, Ownable {
+contract MdexFactory is IMdexFactory {
     using SafeMath for uint256;
     address public feeTo;
     address public feeToSetter;
     uint256 public feeToRate;
     bytes32 public initCodeHash;
+    bool public initCode = false;
 
     mapping(address => mapping(address => address)) public getPair;
     address[] public allPairs;
@@ -549,10 +510,10 @@ contract MdexFactory is IMdexFactory, Ownable {
     }
 
     function createPair(address tokenA, address tokenB) external returns (address pair) {
-        require(tokenA != tokenB, 'MdexSwap: IDENTICAL_ADDRESSES');
+        require(tokenA != tokenB, 'MdexSwapFactory: IDENTICAL_ADDRESSES');
         (address token0, address token1) = tokenA < tokenB ? (tokenA, tokenB) : (tokenB, tokenA);
-        require(token0 != address(0), 'MdexSwap: ZERO_ADDRESS');
-        require(getPair[token0][token1] == address(0), 'MdexSwap: PAIR_EXISTS');
+        require(token0 != address(0), 'MdexSwapFactory: ZERO_ADDRESS');
+        require(getPair[token0][token1] == address(0), 'MdexSwapFactory: PAIR_EXISTS');
         // single check is sufficient
         bytes memory bytecode = type(MdexPair).creationCode;
         bytes32 salt = keccak256(abi.encodePacked(token0, token1));
@@ -568,18 +529,27 @@ contract MdexFactory is IMdexFactory, Ownable {
     }
 
     function setFeeTo(address _feeTo) external {
-        require(msg.sender == feeToSetter, 'MdexSwap: FORBIDDEN');
+        require(msg.sender == feeToSetter, 'MdexSwapFactory: FORBIDDEN');
         feeTo = _feeTo;
     }
 
     function setFeeToSetter(address _feeToSetter) external {
-        require(msg.sender == feeToSetter, 'MdexSwap: FORBIDDEN');
+        require(msg.sender == feeToSetter, 'MdexSwapFactory: FORBIDDEN');
+        require(_feeToSetter != address(0), "MdexSwapFactory: FeeToSetter is zero address");
         feeToSetter = _feeToSetter;
     }
 
-    function setFeeToRate(uint256 _rate) public onlyOwner {
+    function setFeeToRate(uint256 _rate) external {
+        require(msg.sender == feeToSetter, 'MdexSwapFactory: FORBIDDEN');
         require(_rate > 0, "MdexSwapFactory: FEE_TO_RATE_OVERFLOW");
         feeToRate = _rate.sub(1);
+    }
+
+    function setInitCodeHash(bytes32 _initCodeHash) external {
+        require(msg.sender == feeToSetter, 'MdexSwapFactory: FORBIDDEN');
+        require(initCode == false, "MdexSwapFactory: Do not repeat settings initCodeHash");
+        initCodeHash = _initCodeHash;
+        initCode = true;
     }
 
     // returns sorted token addresses, used to handle return values from pairs sorted in this order
@@ -589,28 +559,25 @@ contract MdexFactory is IMdexFactory, Ownable {
         require(token0 != address(0), 'MdexSwapFactory: ZERO_ADDRESS');
     }
 
-    function setInitCodeHash(bytes32 _initCodeHash) external onlyOwner {
-        initCodeHash = _initCodeHash;
-    }
 
     function getInitCodeHash() public pure returns (bytes32) {
         return keccak256(abi.encodePacked(type(MdexPair).creationCode));
     }
 
     // calculates the CREATE2 address for a pair without making any external calls
-    function pairFor(address factory, address tokenA, address tokenB) public view returns (address pair) {
+    function pairFor(address tokenA, address tokenB) public view returns (address pair) {
         (address token0, address token1) = sortTokens(tokenA, tokenB);
         pair = address(uint(keccak256(abi.encodePacked(
                 hex'ff',
-                factory,
+                address(this),
                 keccak256(abi.encodePacked(token0, token1)),
                 initCodeHash
             ))));
     }
     // fetches and sorts the reserves for a pair
-    function getReserves(address factory, address tokenA, address tokenB) public view returns (uint reserveA, uint reserveB) {
+    function getReserves(address tokenA, address tokenB) public view returns (uint reserveA, uint reserveB) {
         (address token0,) = sortTokens(tokenA, tokenB);
-        (uint reserve0, uint reserve1,) = IMdexPair(pairFor(factory, tokenA, tokenB)).getReserves();
+        (uint reserve0, uint reserve1,) = IMdexPair(pairFor(tokenA, tokenB)).getReserves();
         (reserveA, reserveB) = tokenA == token0 ? (reserve0, reserve1) : (reserve1, reserve0);
     }
 
@@ -641,23 +608,23 @@ contract MdexFactory is IMdexFactory, Ownable {
     }
 
     // performs chained getAmountOut calculations on any number of pairs
-    function getAmountsOut(address factory, uint amountIn, address[] memory path) public view returns (uint[] memory amounts) {
+    function getAmountsOut(uint amountIn, address[] memory path) public view returns (uint[] memory amounts) {
         require(path.length >= 2, 'MdexSwapFactory: INVALID_PATH');
         amounts = new uint[](path.length);
         amounts[0] = amountIn;
         for (uint i; i < path.length - 1; i++) {
-            (uint reserveIn, uint reserveOut) = getReserves(factory, path[i], path[i + 1]);
+            (uint reserveIn, uint reserveOut) = getReserves(path[i], path[i + 1]);
             amounts[i + 1] = getAmountOut(amounts[i], reserveIn, reserveOut);
         }
     }
 
     // performs chained getAmountIn calculations on any number of pairs
-    function getAmountsIn(address factory, uint amountOut, address[] memory path) public view returns (uint[] memory amounts) {
+    function getAmountsIn(uint amountOut, address[] memory path) public view returns (uint[] memory amounts) {
         require(path.length >= 2, 'MdexSwapFactory: INVALID_PATH');
         amounts = new uint[](path.length);
         amounts[amounts.length - 1] = amountOut;
         for (uint i = path.length - 1; i > 0; i--) {
-            (uint reserveIn, uint reserveOut) = getReserves(factory, path[i - 1], path[i]);
+            (uint reserveIn, uint reserveOut) = getReserves(path[i - 1], path[i]);
             amounts[i - 1] = getAmountIn(amounts[i], reserveIn, reserveOut);
         }
     }
