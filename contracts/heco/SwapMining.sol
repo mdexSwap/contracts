@@ -14,64 +14,66 @@ contract SwapMining is Ownable {
     using EnumerableSet for EnumerableSet.AddressSet;
     EnumerableSet.AddressSet private _whitelist;
 
-    //每个区块产出mdx的数量
+    // MDX tokens created per block
     uint256 public mdxPerBlock;
-    //开始区块
+    // The block number when MDX mining starts.
     uint256 public startBlock;
-    //多少个区块开始减半
+    // How many blocks are halved
     uint256 public halvingPeriod = 1728000;
-    //减半的周期
+    // Halving cycle
     uint256 public halvingTimes;
-    //总权重
+    // Total allocation points
     uint256 public totalAllocPoint = 0;
+    // router address
     address public router;
+    // factory address
     IMdexFactory public factory;
+    // mdx token address
     IMdx public mdx;
-    //计算价格的锚定代币
+    // Calculate price based on WHT
     address public targetToken;
-    //pair对应的池子pid
+    // pair corresponding pid
     mapping(address => uint256) public pairOfPid;
 
     constructor(
         IMdx _mdx,
         IMdexFactory _factory,
         address _router,
-        address _token,
+        address _targetToken,
         uint256 _mdxPerBlock,
         uint256 _startBlock
     ) public {
         mdx = _mdx;
         factory = _factory;
         router = _router;
-        targetToken = _token;
+        targetToken = _targetToken;
         mdxPerBlock = _mdxPerBlock;
         startBlock = _startBlock;
     }
 
     struct UserInfo {
-        uint256 quantity;   //用户当前金额
-        uint256 blockNumber;    //上次交易的区块
+        uint256 quantity;       // How many LP tokens the user has provided
+        uint256 blockNumber;    // Last transaction block
     }
 
     struct PoolInfo {
-        address pair;           //可以交易挖矿的交易对地址
-        uint256 quantity;       //当前池子的交易量
-        uint256 totalQuantity;  //历史总交易量
-        uint256 allocPoint;     //当前池子的权重
-        uint256 allocMdxAmount; //当前池子所拥有的mdx数量
-        uint256 lastRewardBlock;//池子上次更新的区块
+        address pair;           // Trading pairs that can be mined
+        uint256 quantity;       // Current amount of LPs
+        uint256 totalQuantity;  // All quantity
+        uint256 allocPoint;     // How many allocation points assigned to this pool
+        uint256 allocMdxAmount; // How many MDXs
+        uint256 lastRewardBlock;// Last transaction block
     }
 
     PoolInfo[] public poolInfo;
     mapping(uint256 => mapping(address => UserInfo)) public userInfo;
 
-    //池子的数量
+
     function poolLength() public view returns (uint256) {
         return poolInfo.length;
     }
 
 
-    //添加可以挖矿的交易对
     function addPair(uint256 _allocPoint, address _pair, bool _withUpdate) public onlyOwner {
         if (_withUpdate) {
             massMintPools();
@@ -89,7 +91,7 @@ contract SwapMining is Ownable {
         pairOfPid[_pair] = poolLength() - 1;
     }
 
-    //更新池子的权重
+    // Update the allocPoint of the pool
     function setPair(uint256 _pid, uint256 _allocPoint, bool _withUpdate) public onlyOwner {
         if (_withUpdate) {
             massMintPools();
@@ -98,13 +100,13 @@ contract SwapMining is Ownable {
         poolInfo[_pid].allocPoint = _allocPoint;
     }
 
-    //设置每个区块产出mdx的数量
+    // Set the number of mdx produced by each block
     function setMdxPerBlock(uint256 _newPerBlock) public onlyOwner {
         massMintPools();
         mdxPerBlock = _newPerBlock;
     }
 
-    //添加白名单  只有在白名单的token 才可以添加交易挖矿
+    // Only tokens in the whitelist can be mined MDX
     function addWhitelist(address _addToken) public onlyOwner returns (bool) {
         require(_addToken != address(0), "SwapMining: token is the zero address");
         return EnumerableSet.add(_whitelist, _addToken);
@@ -128,12 +130,10 @@ contract SwapMining is Ownable {
         return EnumerableSet.at(_whitelist, _index);
     }
 
-    //设置新的减半区块数量
     function setHalvingPeriod(uint256 _block) public onlyOwner {
         halvingPeriod = _block;
     }
 
-    //设置新的减半周期
     function setHalvingTimes(uint256 _cycle) public onlyOwner {
         halvingTimes = _cycle;
     }
@@ -154,7 +154,7 @@ contract SwapMining is Ownable {
         targetToken = _targetToken;
     }
 
-    //判断是否减半,在哪个周期
+    // At what phase
     function phase(uint256 blockNumber) public view returns (uint256) {
         if (halvingPeriod == 0) {
             return 0;
@@ -169,7 +169,6 @@ contract SwapMining is Ownable {
         return phase(block.number);
     }
 
-    //当前区块所获得的奖励
     function reward(uint256 blockNumber) public view returns (uint256) {
         uint256 _phase = phase(blockNumber);
         if (_phase > halvingTimes) {
@@ -182,17 +181,17 @@ contract SwapMining is Ownable {
         return reward(block.number);
     }
 
-    //池子当前可以获取的奖励
+    // Rewards for the current block
     function getMdxReward(uint256 _lastRewardBlock) public view returns (uint256) {
         uint256 blockReward = 0;
         uint256 n = phase(_lastRewardBlock);
         uint256 m = phase(block.number);
-        //如果经历了多个周期
+        // If it crosses the cycle
         while (n < m) {
             n++;
-            //获取最后一个周期的最后一个区块
+            // Get the last block of the previous cycle
             uint256 r = n.mul(halvingPeriod).add(startBlock);
-            //获取之前周期的奖励
+            // Get rewards from previous periods
             blockReward = blockReward.add((r.sub(_lastRewardBlock)).mul(reward(r)));
             _lastRewardBlock = r;
         }
@@ -200,7 +199,7 @@ contract SwapMining is Ownable {
         return blockReward;
     }
 
-    //更新所有的池子 在更新权重和设置新的出块数量时候调用
+    // Update all pools Called when updating allocPoint and setting new blocks
     function massMintPools() public {
         uint256 length = poolInfo.length;
         for (uint256 pid = 0; pid < length; ++pid) {
@@ -217,16 +216,16 @@ contract SwapMining is Ownable {
         if (blockReward <= 0) {
             return false;
         }
-        //根据权重计算池子所获得的奖励
+        // Calculate the rewards obtained by the pool based on the allocPoint
         uint256 mdxReward = blockReward.mul(pool.allocPoint).div(totalAllocPoint);
         mdx.mint(address(this), mdxReward);
-        //增加当前池子拥有的代币数量
+        // Increase the number of tokens in the current pool
         pool.allocMdxAmount = pool.allocMdxAmount.add(mdxReward);
         pool.lastRewardBlock = block.number;
         return true;
     }
 
-    //交易挖矿  只能由router调用
+    // swapMining  only router
     function swap(address account, address input, address output, uint256 amount) public onlyRouter returns (bool) {
         require(account != address(0), "SwapMining: taker swap account is the zero address");
         require(input != address(0), "SwapMining: taker swap input is the zero address");
@@ -240,11 +239,10 @@ contract SwapMining is Ownable {
             return false;
         }
 
-        //计算当前交易对的pair
         address pair = IMdexFactory(factory).pairFor(address(factory), input, output);
 
         PoolInfo storage pool = poolInfo[pairOfPid[pair]];
-        //如果不存在或者权重为0则返回
+        // If it does not exist or the allocPoint is 0 then return
         if (pool.pair != pair || pool.allocPoint <= 0) {
             return false;
         }
@@ -265,7 +263,7 @@ contract SwapMining is Ownable {
         return true;
     }
 
-    //用户提取所有的池子的交易奖励
+    // The user withdraws all the transaction rewards of the pool
     function takerWithdraw() public {
         uint256 userSub;
         uint256 length = poolInfo.length;
@@ -273,9 +271,8 @@ contract SwapMining is Ownable {
             PoolInfo storage pool = poolInfo[pid];
             UserInfo storage user = userInfo[pid][msg.sender];
             if (user.quantity > 0) {
-                //用户资产大于零 更新池子获取最新可获得的奖励
                 mint(pid);
-                //用户在这个池子里所占有的奖励
+                // The reward held by the user in this pool
                 userSub = userSub.add(pool.allocMdxAmount.mul(user.quantity).div(pool.quantity));
                 pool.quantity = pool.quantity.sub(user.quantity);
                 pool.allocMdxAmount = pool.allocMdxAmount.sub(userSub);
@@ -289,7 +286,7 @@ contract SwapMining is Ownable {
         mdx.transfer(msg.sender, userSub);
     }
 
-    //获取用户在当前池子的奖励
+    // Get rewards from users in the current pool
     function getUserReward(uint256 _pid) public view returns (uint256, uint256, uint256){
         require(_pid <= poolInfo.length - 1, "SwapMining: Not find this pool");
         uint256 userSub;
@@ -300,17 +297,17 @@ contract SwapMining is Ownable {
             uint256 mdxReward = blockReward.mul(pool.allocPoint).div(totalAllocPoint);
             userSub = userSub.add((pool.allocMdxAmount.add(mdxReward)).mul(user.quantity).div(pool.quantity));
         }
-        //pid, 用户所能获取的mdx, 用户交易的金额
+        //pid, Mdx available to users, User transaction amount
         return (_pid, userSub, user.quantity);
     }
 
-    //获取池子的详情
+    // Get details of the pool
     function getPoolList(uint256 _pid) public view returns (uint256, address, address, uint256, uint256, uint256){
         require(_pid <= poolInfo.length - 1, "SwapMining: Not find this pool");
         PoolInfo memory pool = poolInfo[_pid];
         address token0 = IMdexPair(pool.pair).token0();
         address token1 = IMdexPair(pool.pair).token1();
-        //pid,token0,token1,池子剩余奖励,池子总交易额
+        //pid,token0,token1,Pool remaining reward,Total transaction volume of the pool
         return (_pid, token0, token1, pool.allocMdxAmount, pool.totalQuantity, pool.allocPoint);
     }
 
