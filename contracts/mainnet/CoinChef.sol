@@ -6,8 +6,8 @@ import "@openzeppelin/contracts/utils/EnumerableSet.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
-import "./interface/IMdx.sol";
-import "./interface/IMasterChef.sol";
+import "../interface/IMdx.sol";
+import "../interface/IMasterChef.sol";
 
 
 contract CoinChef is Ownable {

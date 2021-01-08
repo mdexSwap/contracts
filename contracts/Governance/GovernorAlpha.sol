@@ -8,10 +8,10 @@ contract GovernorAlpha {
     string public constant name = "MDX Governor Alpha";
 
     /// @notice The number of votes in support of a proposal required in order for a quorum to be reached and for a vote to succeed
-    function quorumVotes() public pure returns (uint) { return MdxToken.totalSupply() / 25; } // 400,000 = 4% of Comp
+    function quorumVotes() public pure returns (uint) { return MdxToken.totalSupply() / 25; } // 400,000 = 4% of MDX
 
     /// @notice The number of votes required in order for a voter to become a proposer
-    function proposalThreshold() public pure returns (uint) { return MdxToken.totalSupply() / 100; } // 100,000 = 1% of Comp
+    function proposalThreshold() public pure returns (uint) { return MdxToken.totalSupply() / 100; } // 100,000 = 1% of MDX
 
     /// @notice The maximum number of actions that can be included in a proposal
     function proposalMaxOperations() public pure returns (uint) { return 10; } // 10 actions
@@ -22,10 +22,10 @@ contract GovernorAlpha {
     /// @notice The duration of voting on a proposal, in blocks
     function votingPeriod() public pure returns (uint) { return 86400; } // ~3 days in blocks (assuming 3s blocks)
 
-    /// @notice The address of the Compound Protocol Timelock
+    /// @notice The address of the MDX Protocol Timelock
     TimelockInterface public timelock;
 
-    /// @notice The address of the Compound governance token
+    /// @notice The address of the MDX governance token
     MdxToken public mdx;
 
     /// @notice The address of the Governor Guardian
