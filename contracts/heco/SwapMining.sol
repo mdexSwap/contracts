@@ -239,7 +239,7 @@ contract SwapMining is Ownable {
             return false;
         }
 
-        address pair = IMdexFactory(factory).pairFor(address(factory), input, output);
+        address pair = IMdexFactory(factory).pairFor(input, output);
 
         PoolInfo storage pool = poolInfo[pairOfPid[pair]];
         // If it does not exist or the allocPoint is 0 then return
@@ -251,7 +251,7 @@ contract SwapMining is Ownable {
         if (price <= 0) {
             return false;
         }
-        uint256 quantity = price.mul(amount).div(10 ** uint256(IERC20(targetToken).decimals()));
+        uint256 quantity = price.mul(amount).div(10 ** uint256(IERC20(output).decimals()));
 
         mint(pairOfPid[pair]);
 

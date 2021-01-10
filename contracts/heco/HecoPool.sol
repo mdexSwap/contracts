@@ -69,12 +69,10 @@ contract HecoPool is Ownable {
 
     constructor(
         IMdx _mdx,
-        address _devAddress,
         uint256 _mdxPerBlock,
         uint256 _startBlock
     ) public {
         mdx = _mdx;
-        devAddress = _devAddress;
         mdxPerBlock = _mdxPerBlock;
         startBlock = _startBlock;
     }
