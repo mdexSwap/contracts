@@ -19,7 +19,7 @@ contract SwapMining is Ownable {
     // The block number when MDX mining starts.
     uint256 public startBlock;
     // How many blocks are halved
-    uint256 public halvingPeriod = 1728000;
+    uint256 public halvingPeriod = 2400;
     // Halving cycle
     uint256 public halvingTimes;
     // Total allocation points
@@ -273,11 +273,12 @@ contract SwapMining is Ownable {
             if (user.quantity > 0) {
                 mint(pid);
                 // The reward held by the user in this pool
-                userSub = userSub.add(pool.allocMdxAmount.mul(user.quantity).div(pool.quantity));
+                uint256 userReward = pool.allocMdxAmount.mul(user.quantity).div(pool.quantity);
                 pool.quantity = pool.quantity.sub(user.quantity);
-                pool.allocMdxAmount = pool.allocMdxAmount.sub(userSub);
+                pool.allocMdxAmount = pool.allocMdxAmount.sub(userReward);
                 user.quantity = 0;
                 user.blockNumber = block.number;
+                userSub = userSub.add(userReward);
             }
         }
         if (userSub <= 0) {
@@ -287,7 +288,7 @@ contract SwapMining is Ownable {
     }
 
     // Get rewards from users in the current pool
-    function getUserReward(uint256 _pid) public view returns (uint256, uint256, uint256){
+    function getUserReward(uint256 _pid) public view returns (uint256, uint256){
         require(_pid <= poolInfo.length - 1, "SwapMining: Not find this pool");
         uint256 userSub;
         PoolInfo memory pool = poolInfo[_pid];
@@ -297,18 +298,22 @@ contract SwapMining is Ownable {
             uint256 mdxReward = blockReward.mul(pool.allocPoint).div(totalAllocPoint);
             userSub = userSub.add((pool.allocMdxAmount.add(mdxReward)).mul(user.quantity).div(pool.quantity));
         }
-        //pid, Mdx available to users, User transaction amount
-        return (_pid, userSub, user.quantity);
+        //Mdx available to users, User transaction amount
+        return (userSub, user.quantity);
     }
 
     // Get details of the pool
-    function getPoolList(uint256 _pid) public view returns (uint256, address, address, uint256, uint256, uint256){
+    function getPoolList(uint256 _pid) public view returns (address, address, uint256, uint256, uint256, uint256){
         require(_pid <= poolInfo.length - 1, "SwapMining: Not find this pool");
         PoolInfo memory pool = poolInfo[_pid];
         address token0 = IMdexPair(pool.pair).token0();
         address token1 = IMdexPair(pool.pair).token1();
-        //pid,token0,token1,Pool remaining reward,Total transaction volume of the pool
-        return (_pid, token0, token1, pool.allocMdxAmount, pool.totalQuantity, pool.allocPoint);
+        uint256 mdxAmount = pool.allocMdxAmount;
+        uint256 blockReward = getMdxReward(pool.lastRewardBlock);
+        uint256 mdxReward = blockReward.mul(pool.allocPoint).div(totalAllocPoint);
+        mdxAmount = mdxAmount.add(mdxReward);
+        //token0,token1,Pool remaining reward,Total /Current transaction volume of the pool
+        return (token0, token1, mdxAmount, pool.totalQuantity, pool.quantity, pool.allocPoint);
     }
 
     modifier onlyRouter() {
