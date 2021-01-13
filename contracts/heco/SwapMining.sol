@@ -1,4 +1,6 @@
-pragma solidity >=0.5.0 <0.7.0;
+// SPDX-License-Identifier: MIT
+
+pragma solidity >=0.6.0 <0.8.0;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/EnumerableSet.sol";
@@ -8,6 +10,11 @@ import "../interface/IMdexFactory.sol";
 import "../interface/IMdexPair.sol";
 import "../interface/IMdx.sol";
 
+interface IOracle {
+    function update(address tokenA, address tokenB) external;
+
+    function consult(address tokenIn, uint amountIn, address tokenOut) external view returns (uint amountOut);
+}
 
 contract SwapMining is Ownable {
     using SafeMath for uint256;
@@ -19,18 +26,17 @@ contract SwapMining is Ownable {
     // The block number when MDX mining starts.
     uint256 public startBlock;
     // How many blocks are halved
-    uint256 public halvingPeriod = 2400;
-    // Halving cycle
-    uint256 public halvingTimes;
+    uint256 public halvingPeriod = 14400;
     // Total allocation points
     uint256 public totalAllocPoint = 0;
+    IOracle public oracle;
     // router address
     address public router;
     // factory address
     IMdexFactory public factory;
     // mdx token address
     IMdx public mdx;
-    // Calculate price based on WHT
+    // Calculate price based on HUSD
     address public targetToken;
     // pair corresponding pid
     mapping(address => uint256) public pairOfPid;
@@ -38,6 +44,7 @@ contract SwapMining is Ownable {
     constructor(
         IMdx _mdx,
         IMdexFactory _factory,
+        IOracle _oracle,
         address _router,
         address _targetToken,
         uint256 _mdxPerBlock,
@@ -45,6 +52,7 @@ contract SwapMining is Ownable {
     ) public {
         mdx = _mdx;
         factory = _factory;
+        oracle = _oracle;
         router = _router;
         targetToken = _targetToken;
         mdxPerBlock = _mdxPerBlock;
@@ -134,24 +142,14 @@ contract SwapMining is Ownable {
         halvingPeriod = _block;
     }
 
-    function setHalvingTimes(uint256 _cycle) public onlyOwner {
-        halvingTimes = _cycle;
-    }
-
     function setRouter(address newRouter) public onlyOwner {
         require(newRouter != address(0), "SwapMining: new router is the zero address");
         router = newRouter;
     }
 
-    function setFactory(IMdexFactory newFactory) public onlyOwner {
-        require(address(newFactory) != address(0), "SwapMining: new factory is the zero address");
-        factory = newFactory;
-    }
-
-    function setTargetToken(address _targetToken) public onlyOwner {
-        require(_targetToken != address(0), "SwapMining: new targetToken is the zero address");
-        require(isWhitelist(_targetToken), "SwapMining: illegal targetToken");
-        targetToken = _targetToken;
+    function setOracle(IOracle _oracle) public onlyOwner {
+        require(_oracle != address(0), "SwapMining: new oracle is the zero address");
+        oracle = _oracle;
     }
 
     // At what phase
@@ -171,9 +169,6 @@ contract SwapMining is Ownable {
 
     function reward(uint256 blockNumber) public view returns (uint256) {
         uint256 _phase = phase(blockNumber);
-        if (_phase > halvingTimes) {
-            return 0;
-        }
         return mdxPerBlock.div(2 ** _phase);
     }
 
@@ -225,7 +220,7 @@ contract SwapMining is Ownable {
         return true;
     }
 
-    // swapMining  only router
+    // swapMining only router
     function swap(address account, address input, address output, uint256 amount) public onlyRouter returns (bool) {
         require(account != address(0), "SwapMining: taker swap account is the zero address");
         require(input != address(0), "SwapMining: taker swap input is the zero address");
@@ -247,11 +242,10 @@ contract SwapMining is Ownable {
             return false;
         }
 
-        uint256 price = getPrice(output, targetToken);
-        if (price <= 0) {
+        uint256 quantity = getQuantity(output, amount, targetToken);
+        if (quantity <= 0) {
             return false;
         }
-        uint256 quantity = price.mul(amount).div(10 ** uint256(IERC20(output).decimals()));
 
         mint(pairOfPid[pair]);
 
@@ -303,7 +297,7 @@ contract SwapMining is Ownable {
     }
 
     // Get details of the pool
-    function getPoolList(uint256 _pid) public view returns (address, address, uint256, uint256, uint256, uint256){
+    function getPoolInfo(uint256 _pid) public view returns (address, address, uint256, uint256, uint256, uint256){
         require(_pid <= poolInfo.length - 1, "SwapMining: Not find this pool");
         PoolInfo memory pool = poolInfo[_pid];
         address token0 = IMdexPair(pool.pair).token0();
@@ -321,28 +315,24 @@ contract SwapMining is Ownable {
         _;
     }
 
-    function getPrice(address token, address anchorToken) public view returns (uint256) {
-        uint256 price = 0;
-        uint256 anchorDecimal = 10 ** uint256(IERC20(anchorToken).decimals());
-        uint256 baseDecimal = 10 ** uint256(IERC20(token).decimals());
-        if (anchorToken == token) {
-            price = anchorDecimal;
-        } else if (IMdexFactory(factory).getPair(token, anchorToken) != address(0)) {
-            price = IMdexPair(IMdexFactory(factory).getPair(token, anchorToken)).price(token, baseDecimal);
+    function getQuantity(address outputToken, uint256 outputAmount, address anchorToken) public view returns (uint256) {
+        uint256 quantity = 0;
+        if (outputToken == anchorToken) {
+            quantity = outputAmount;
+        } else if (IMdexFactory(factory).getPair(outputToken, anchorToken) != address(0)) {
+            quantity = IOracle(oracle).consult(outputToken, outputAmount, anchorToken);
         } else {
             uint256 length = getWhitelistLength();
             for (uint256 index = 0; index < length; index++) {
-                address base = getWhitelist(index);
-                if (IMdexFactory(factory).getPair(token, base) != address(0) && IMdexFactory(factory).getPair(base, anchorToken) != address(0)) {
-                    uint256 decimal = 10 ** uint256(IERC20(base).decimals());
-                    uint256 price0 = IMdexPair(IMdexFactory(factory).getPair(token, base)).price(token, baseDecimal);
-                    uint256 price1 = IMdexPair(IMdexFactory(factory).getPair(base, anchorToken)).price(base, decimal);
-                    price = price0.mul(price1).div(decimal);
+                address intermediate = getWhitelist(index);
+                if (IMdexFactory(factory).getPair(outputToken, intermediate) != address(0) && IMdexFactory(factory).getPair(intermediate, anchorToken) != address(0)) {
+                    uint256 interQuantity = IOracle(oracle).consult(outputToken, outputAmount, intermediate);
+                    quantity = IOracle(oracle).consult(intermediate, interQuantity, anchorToken);
                     break;
                 }
             }
         }
-        return price;
+        return quantity;
     }
 
 }

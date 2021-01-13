@@ -8,19 +8,19 @@ contract GovernorAlpha {
     string public constant name = "MDX Governor Alpha";
 
     /// @notice The number of votes in support of a proposal required in order for a quorum to be reached and for a vote to succeed
-    function quorumVotes() public pure returns (uint) { return MdxToken.totalSupply() / 25; } // 400,000 = 4% of MDX
+    function quorumVotes() public view returns (uint) {return mdx.totalSupply() / 25;} // 400,000 = 4% of MDX
 
     /// @notice The number of votes required in order for a voter to become a proposer
-    function proposalThreshold() public pure returns (uint) { return MdxToken.totalSupply() / 100; } // 100,000 = 1% of MDX
+    function proposalThreshold() public view returns (uint) {return mdx.totalSupply() / 100;} // 100,000 = 1% of MDX
 
     /// @notice The maximum number of actions that can be included in a proposal
-    function proposalMaxOperations() public pure returns (uint) { return 10; } // 10 actions
+    function proposalMaxOperations() public pure returns (uint) {return 10;} // 10 actions
 
     /// @notice The delay before voting on a proposal may take place, once proposed
-    function votingDelay() public pure returns (uint) { return 1; } // 1 block
+    function votingDelay() public pure returns (uint) {return 1;} // 1 block
 
     /// @notice The duration of voting on a proposal, in blocks
-    function votingPeriod() public pure returns (uint) { return 86400; } // ~3 days in blocks (assuming 3s blocks)
+    function votingPeriod() public pure returns (uint) {return 86400;} // ~3 days in blocks (assuming 3s blocks)
 
     /// @notice The address of the MDX Protocol Timelock
     TimelockInterface public timelock;
@@ -75,7 +75,7 @@ contract GovernorAlpha {
         bool executed;
 
         /// @notice Receipts of ballots for the entire set of voters
-        mapping (address => Receipt) receipts;
+        mapping(address => Receipt) receipts;
     }
 
     /// @notice Ballot receipt record for a voter
@@ -87,7 +87,7 @@ contract GovernorAlpha {
         bool support;
 
         /// @notice The number of votes the voter had, which were cast
-        uint96 votes;
+        uint256 votes;
     }
 
     /// @notice Possible states that a proposal may be in
@@ -103,10 +103,10 @@ contract GovernorAlpha {
     }
 
     /// @notice The official record of all proposals ever proposed
-    mapping (uint => Proposal) public proposals;
+    mapping(uint => Proposal) public proposals;
 
     /// @notice The latest proposal for each proposer
-    mapping (address => uint) public latestProposalIds;
+    mapping(address => uint) public latestProposalIds;
 
     /// @notice The EIP-712 typehash for the contract's domain
     bytes32 public constant DOMAIN_TYPEHASH = keccak256("EIP712Domain(string name,uint256 chainId,address verifyingContract)");
@@ -153,19 +153,19 @@ contract GovernorAlpha {
 
         proposalCount++;
         Proposal memory newProposal = Proposal({
-        id: proposalCount,
-        proposer: msg.sender,
-        eta: 0,
-        targets: targets,
-        values: values,
-        signatures: signatures,
-        calldatas: calldatas,
-        startBlock: startBlock,
-        endBlock: endBlock,
-        forVotes: 0,
-        againstVotes: 0,
-        canceled: false,
-        executed: false
+        id : proposalCount,
+        proposer : msg.sender,
+        eta : 0,
+        targets : targets,
+        values : values,
+        signatures : signatures,
+        calldatas : calldatas,
+        startBlock : startBlock,
+        endBlock : endBlock,
+        forVotes : 0,
+        againstVotes : 0,
+        canceled : false,
+        executed : false
         });
 
         proposals[newProposal.id] = newProposal;
@@ -196,7 +196,7 @@ contract GovernorAlpha {
         Proposal storage proposal = proposals[proposalId];
         proposal.executed = true;
         for (uint i = 0; i < proposal.targets.length; i++) {
-            timelock.executeTransaction.value(proposal.values[i])(proposal.targets[i], proposal.values[i], proposal.signatures[i], proposal.calldatas[i], proposal.eta);
+            timelock.executeTransaction{value : proposal.values[i]}(proposal.targets[i], proposal.values[i], proposal.signatures[i], proposal.calldatas[i], proposal.eta);
         }
         emit ProposalExecuted(proposalId);
     }
@@ -265,7 +265,7 @@ contract GovernorAlpha {
         Proposal storage proposal = proposals[proposalId];
         Receipt storage receipt = proposal.receipts[voter];
         require(receipt.hasVoted == false, "GovernorAlpha::_castVote: voter already voted");
-        uint96 votes = mdx.getPriorVotes(voter, proposal.startBlock);
+        uint256 votes = mdx.getPriorVotes(voter, proposal.startBlock);
 
         if (support) {
             proposal.forVotes = add256(proposal.forVotes, votes);
@@ -313,17 +313,23 @@ contract GovernorAlpha {
 
     function getChainId() internal pure returns (uint) {
         uint chainId;
-        assembly { chainId := chainid() }
+        assembly {chainId := chainid()}
         return chainId;
     }
 }
 
 interface TimelockInterface {
     function delay() external view returns (uint);
+
     function GRACE_PERIOD() external view returns (uint);
+
     function acceptAdmin() external;
+
     function queuedTransactions(bytes32 hash) external view returns (bool);
+
     function queueTransaction(address target, uint value, string calldata signature, bytes calldata data, uint eta) external returns (bytes32);
+
     function cancelTransaction(address target, uint value, string calldata signature, bytes calldata data, uint eta) external;
+
     function executeTransaction(address target, uint value, string calldata signature, bytes calldata data, uint eta) external payable returns (bytes memory);
 }

@@ -2,10 +2,9 @@
 pragma solidity ^0.6.0;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
 
 contract MdxToken is ERC20("MDX Token", "MDX"), Ownable {
-    uint256 private constant maxSupply = 30000000 * 1e18;     // the total supply
+    uint256 private constant maxSupply = 20000000 * 1e18;     // the total supply
     address public minter;
 
     // mint with max supply
@@ -17,7 +16,8 @@ contract MdxToken is ERC20("MDX Token", "MDX"), Ownable {
         return true;
     }
 
-    function setMinter(address _newMinter) public onlyOwner {
+    function setMinter(address _newMinter) external {
+        require(minter == address(0), "has set up");
         require(_newMinter != address(0), "is zero address");
         minter = _newMinter;
     }

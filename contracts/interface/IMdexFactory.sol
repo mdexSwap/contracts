@@ -9,8 +9,6 @@ interface IMdexFactory {
 
     function feeToRate() external view returns (uint256);
 
-    function initCodeHash() external view returns (bytes32);
-
     function getPair(address tokenA, address tokenB) external view returns (address pair);
 
     function allPairs(uint) external view returns (address pair);
@@ -24,8 +22,6 @@ interface IMdexFactory {
     function setFeeToSetter(address) external;
 
     function setFeeToRate(uint256) external;
-
-    function setInitCodeHash(bytes32) external;
 
     function sortTokens(address tokenA, address tokenB) external pure returns (address token0, address token1);
 

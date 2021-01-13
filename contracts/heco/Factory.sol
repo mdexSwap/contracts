@@ -1,12 +1,44 @@
-pragma solidity =0.5.16;
+pragma solidity >=0.5.0 <0.8.0;
 
 import "../library/SafeMath.sol";
-import "../library/UQ112x112.sol";
 import "../interface/IERC20.sol";
 import "../interface/IMdexFactory.sol";
 import "../interface/IMdexPair.sol";
-import "../interface/IMdexERC20.sol";
-import "../interface/IHswapV2Callee.sol";
+
+interface IHswapV2Callee {
+    function hswapV2Call(address sender, uint amount0, uint amount1, bytes calldata data) external;
+}
+
+interface IMdexERC20 {
+    event Approval(address indexed owner, address indexed spender, uint value);
+    event Transfer(address indexed from, address indexed to, uint value);
+
+    function name() external pure returns (string memory);
+
+    function symbol() external pure returns (string memory);
+
+    function decimals() external pure returns (uint8);
+
+    function totalSupply() external view returns (uint);
+
+    function balanceOf(address owner) external view returns (uint);
+
+    function allowance(address owner, address spender) external view returns (uint);
+
+    function approve(address spender, uint value) external returns (bool);
+
+    function transfer(address to, uint value) external returns (bool);
+
+    function transferFrom(address from, address to, uint value) external returns (bool);
+
+    function DOMAIN_SEPARATOR() external view returns (bytes32);
+
+    function PERMIT_TYPEHASH() external pure returns (bytes32);
+
+    function nonces(address owner) external view returns (uint);
+
+    function permit(address owner, address spender, uint value, uint deadline, uint8 v, bytes32 r, bytes32 s) external;
+}
 
 contract MdexERC20 is IMdexERC20 {
     using SafeMath for uint;
@@ -327,7 +359,6 @@ contract MdexFactory is IMdexFactory {
     address public feeToSetter;
     uint256 public feeToRate;
     bytes32 public initCodeHash;
-    bool public initCode = false;
 
     mapping(address => mapping(address => address)) public getPair;
     address[] public allPairs;
@@ -336,6 +367,7 @@ contract MdexFactory is IMdexFactory {
 
     constructor(address _feeToSetter) public {
         feeToSetter = _feeToSetter;
+        initCodeHash = keccak256(abi.encodePacked(type(MdexPair).creationCode));
     }
 
     function allPairsLength() external view returns (uint) {
@@ -378,23 +410,11 @@ contract MdexFactory is IMdexFactory {
         feeToRate = _rate.sub(1);
     }
 
-    function setInitCodeHash(bytes32 _initCodeHash) external {
-        require(msg.sender == feeToSetter, 'MdexSwapFactory: FORBIDDEN');
-        require(initCode == false, "MdexSwapFactory: Do not repeat settings initCodeHash");
-        initCodeHash = _initCodeHash;
-        initCode = true;
-    }
-
     // returns sorted token addresses, used to handle return values from pairs sorted in this order
     function sortTokens(address tokenA, address tokenB) public pure returns (address token0, address token1) {
         require(tokenA != tokenB, 'MdexSwapFactory: IDENTICAL_ADDRESSES');
         (token0, token1) = tokenA < tokenB ? (tokenA, tokenB) : (tokenB, tokenA);
         require(token0 != address(0), 'MdexSwapFactory: ZERO_ADDRESS');
-    }
-
-
-    function getInitCodeHash() public pure returns (bytes32) {
-        return keccak256(abi.encodePacked(type(MdexPair).creationCode));
     }
 
     // calculates the CREATE2 address for a pair without making any external calls
@@ -460,5 +480,20 @@ contract MdexFactory is IMdexFactory {
             (uint reserveIn, uint reserveOut) = getReserves(path[i - 1], path[i]);
             amounts[i - 1] = getAmountIn(amounts[i], reserveIn, reserveOut);
         }
+    }
+}
+
+library UQ112x112 {
+    uint224 constant Q112 = 2 ** 112;
+
+    // encode a uint112 as a UQ112x112
+    function encode(uint112 y) internal pure returns (uint224 z) {
+        z = uint224(y) * Q112;
+        // never overflows
+    }
+
+    // divide a UQ112x112 by a uint112, returning a UQ112x112
+    function uqdiv(uint224 x, uint112 y) internal pure returns (uint224 z) {
+        z = x / uint224(y);
     }
 }

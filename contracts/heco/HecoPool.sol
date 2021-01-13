@@ -7,8 +7,16 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "../interface/IMdx.sol";
-import "../interface/IMasterChefHeco.sol";
 
+interface IMasterChefHeco {
+    function pending(uint256 pid, address user) external view returns (uint256);
+
+    function deposit(uint256 pid, uint256 amount) external;
+
+    function withdraw(uint256 pid, uint256 amount) external;
+
+    function emergencyWithdraw(uint256 pid) external;
+}
 
 contract HecoPool is Ownable {
     using SafeMath for uint256;
@@ -47,7 +55,7 @@ contract HecoPool is Ownable {
     // pid corresponding address
     mapping(address => uint256) public LpOfPid;
     // Control mining
-    bool public pause = true;
+    bool public paused = false;
     // Total allocation points. Must be the sum of all allocation points in all pools.
     uint256 public totalAllocPoint = 0;
     // The block number when MDX mining starts.
@@ -57,11 +65,7 @@ contract HecoPool is Ownable {
     // multLP Token
     address public multLpToken;
     // How many blocks are halved
-    uint256 public halvingPeriod;
-    // Halving cycle
-    uint256 public halvingTimes;
-    // Block that started halving
-    uint256 public startHalvingPeriod;
+    uint256 public halvingPeriod = 14400;
 
     event Deposit(address indexed user, uint256 indexed pid, uint256 amount);
     event Withdraw(address indexed user, uint256 indexed pid, uint256 amount);
@@ -77,21 +81,8 @@ contract HecoPool is Ownable {
         startBlock = _startBlock;
     }
 
-    function setStartHalvingPeriod(uint256 _block) public onlyOwner {
-        startHalvingPeriod = _block;
-    }
-
     function setHalvingPeriod(uint256 _block) public onlyOwner {
         halvingPeriod = _block;
-    }
-
-    function setHalvingTimes(uint256 _cycle) public onlyOwner {
-        halvingTimes = _cycle;
-    }
-
-    function setMdxPerBlock(uint256 _newPerBlock) public onlyOwner {
-        massUpdatePools();
-        mdxPerBlock = _newPerBlock;
     }
 
     function poolLength() public view returns (uint256) {
@@ -118,7 +109,7 @@ contract HecoPool is Ownable {
     }
 
     function setPause() public onlyOwner {
-        pause = !pause;
+        paused = !paused;
     }
 
     function setMultLP(address _multLpToken, address _multLpChef) public onlyOwner {
@@ -129,7 +120,7 @@ contract HecoPool is Ownable {
 
     function replaceMultLP(address _multLpToken, address _multLpChef) public onlyOwner {
         require(_multLpToken != address(0) && _multLpChef != address(0), "is the zero address");
-        require(pause == false, "No mining suspension");
+        require(paused, "No mining suspension");
         multLpToken = _multLpToken;
         multLpChef = _multLpChef;
         uint256 length = getMultLPLength();
@@ -145,6 +136,7 @@ contract HecoPool is Ownable {
     // Add a new lp to the pool. Can only be called by the owner.
     // XXX DO NOT add the same LP token more than once. Rewards will be messed up if you do.
     function add(uint256 _allocPoint, IERC20 _lpToken, bool _withUpdate) public onlyOwner {
+        require(address(_lpToken) != address(0), "_lpToken is the zero address");
         if (_withUpdate) {
             massUpdatePools();
         }
@@ -177,20 +169,17 @@ contract HecoPool is Ownable {
     }
 
     function phase(uint256 blockNumber) public view returns (uint256) {
-        if (startHalvingPeriod == 0 || halvingPeriod == 0) {
+        if (halvingPeriod == 0) {
             return 0;
         }
-        if (blockNumber > startHalvingPeriod) {
-            return (blockNumber.sub(startHalvingPeriod).sub(1)).div(halvingPeriod);
+        if (blockNumber > startBlock) {
+            return (blockNumber.sub(startBlock).sub(1)).div(halvingPeriod);
         }
         return 0;
     }
 
     function reward(uint256 blockNumber) public view returns (uint256) {
         uint256 _phase = phase(blockNumber);
-        if (_phase > halvingTimes) {
-            return 0;
-        }
         return mdxPerBlock.div(2 ** _phase);
     }
 
@@ -200,7 +189,7 @@ contract HecoPool is Ownable {
         uint256 m = phase(block.number);
         while (n < m) {
             n++;
-            uint256 r = n.mul(halvingPeriod).add(startHalvingPeriod);
+            uint256 r = n.mul(halvingPeriod).add(startBlock);
             blockReward = blockReward.add((r.sub(_lastRewardBlock)).mul(reward(r)));
             _lastRewardBlock = r;
         }
@@ -470,7 +459,7 @@ contract HecoPool is Ownable {
     }
 
     modifier notPause() {
-        require(pause == true, "Mining has been suspended");
+        require(!paused, "Mining has been suspended");
         _;
     }
 }

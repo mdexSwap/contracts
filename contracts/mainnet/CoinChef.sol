@@ -7,8 +7,16 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "../interface/IMdx.sol";
-import "../interface/IMasterChef.sol";
 
+interface IMasterChef {
+    function pendingSushi(uint256 pid, address user) external view returns (uint256);
+
+    function deposit(uint256 pid, uint256 amount) external;
+
+    function withdraw(uint256 pid, uint256 amount) external;
+
+    function emergencyWithdraw(uint256 pid) external;
+}
 
 contract CoinChef is Ownable {
     using SafeMath for uint256;
@@ -37,7 +45,7 @@ contract CoinChef is Ownable {
     // The MDX TOKEN!
     IMdx public mdx;
     // MDX tokens created per block.
-    uint256 public mdxPerBlock;
+    uint256 public constant mdxPerBlock = 100 ** 1e18;
     // Info of each pool.
     PoolInfo[] public poolInfo;
     // Info of each user that stakes LP tokens.
@@ -61,11 +69,9 @@ contract CoinChef is Ownable {
 
     constructor(
         IMdx _mdx,
-        uint256 _mdxPerBlock,
         uint256 _startBlock
     ) public {
         mdx = _mdx;
-        mdxPerBlock = _mdxPerBlock;
         startBlock = _startBlock;
         endBlock = _startBlock.add(200000);
     }
@@ -96,6 +102,7 @@ contract CoinChef is Ownable {
     // Add a new lp to the pool. Can only be called by the owner.
     // XXX DO NOT add the same LP token more than once. Rewards will be messed up if you do.
     function add(uint256 _allocPoint, IERC20 _lpToken, bool _withUpdate) public onlyOwner {
+        require(address(_lpToken) != address(0), "lpToken is the zero address");
         require(block.number < endBlock, "All token mining completed");
         if (_withUpdate) {
             massUpdatePools();
@@ -138,31 +145,32 @@ contract CoinChef is Ownable {
     // Update reward variables of the given pool to be up-to-date.
     function updatePool(uint256 _pid) public {
         PoolInfo storage pool = poolInfo[_pid];
-        if (block.number <= pool.lastRewardBlock) {
+        uint256 number = block.number > endBlock ? endBlock : block.number;
+        if (number <= pool.lastRewardBlock) {
             return;
         }
         uint256 lpSupply;
         if (isSushiLP(address(pool.lpToken))) {
             if (pool.totalAmount == 0) {
-                pool.lastRewardBlock = block.number;
+                pool.lastRewardBlock = number;
                 return;
             }
             lpSupply = pool.totalAmount;
         } else {
             lpSupply = pool.lpToken.balanceOf(address(this));
             if (lpSupply == 0) {
-                pool.lastRewardBlock = block.number;
+                pool.lastRewardBlock = number;
                 return;
             }
         }
-        uint256 number = block.number > endBlock ? endBlock : block.number;
+
         uint256 multiplier = number.sub(pool.lastRewardBlock);
         uint256 mdxReward = multiplier.mul(mdxPerBlock).mul(pool.allocPoint).div(totalAllocPoint);
         bool minRet = mdx.mint(address(this), mdxReward);
         if (minRet) {
             pool.accMdxPerShare = pool.accMdxPerShare.add(mdxReward.mul(1e12).div(lpSupply));
         }
-        pool.lastRewardBlock = block.number;
+        pool.lastRewardBlock = number;
     }
 
     // View function to see pending MDXs on frontend.
