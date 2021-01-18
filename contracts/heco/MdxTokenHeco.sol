@@ -239,7 +239,7 @@ abstract contract DelegateERC20 is ERC20 {
 }
 
 contract MdxToken is DelegateERC20, Ownable {
-    uint256 private constant preMineSupply = 100000000 * 1e18; // pre-mine
+    uint256 private constant preMineSupply = 200000000 * 1e18;
     uint256 private constant maxSupply = 1000000000 * 1e18;     // the total supply
 
     using EnumerableSet for EnumerableSet.AddressSet;

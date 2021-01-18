@@ -26,7 +26,7 @@ contract SwapMining is Ownable {
     // The block number when MDX mining starts.
     uint256 public startBlock;
     // How many blocks are halved
-    uint256 public halvingPeriod = 14400;
+    uint256 public halvingPeriod = 5256000;
     // Total allocation points
     uint256 public totalAllocPoint = 0;
     IOracle public oracle;
@@ -83,6 +83,7 @@ contract SwapMining is Ownable {
 
 
     function addPair(uint256 _allocPoint, address _pair, bool _withUpdate) public onlyOwner {
+        require(_pair != address(0), "_pair is the zero address");
         if (_withUpdate) {
             massMintPools();
         }
@@ -148,7 +149,7 @@ contract SwapMining is Ownable {
     }
 
     function setOracle(IOracle _oracle) public onlyOwner {
-        require(_oracle != address(0), "SwapMining: new oracle is the zero address");
+        require(address(_oracle) != address(0), "SwapMining: new oracle is the zero address");
         oracle = _oracle;
     }
 
@@ -178,6 +179,7 @@ contract SwapMining is Ownable {
 
     // Rewards for the current block
     function getMdxReward(uint256 _lastRewardBlock) public view returns (uint256) {
+//        require(_lastRewardBlock <= block.number, "SwapMining: must little than the current block number");
         uint256 blockReward = 0;
         uint256 n = phase(_lastRewardBlock);
         uint256 m = phase(block.number);

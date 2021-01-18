@@ -65,7 +65,7 @@ contract HecoPool is Ownable {
     // multLP Token
     address public multLpToken;
     // How many blocks are halved
-    uint256 public halvingPeriod = 14400;
+    uint256 public halvingPeriod = 5256000;
 
     event Deposit(address indexed user, uint256 indexed pid, uint256 amount);
     event Withdraw(address indexed user, uint256 indexed pid, uint256 amount);
@@ -83,6 +83,12 @@ contract HecoPool is Ownable {
 
     function setHalvingPeriod(uint256 _block) public onlyOwner {
         halvingPeriod = _block;
+    }
+
+    // Set the number of mdx produced by each block
+    function setMdxPerBlock(uint256 _newPerBlock) public onlyOwner {
+        massUpdatePools();
+        mdxPerBlock = _newPerBlock;
     }
 
     function poolLength() public view returns (uint256) {
@@ -120,7 +126,7 @@ contract HecoPool is Ownable {
 
     function replaceMultLP(address _multLpToken, address _multLpChef) public onlyOwner {
         require(_multLpToken != address(0) && _multLpChef != address(0), "is the zero address");
-        require(paused, "No mining suspension");
+        require(paused == true, "No mining suspension");
         multLpToken = _multLpToken;
         multLpChef = _multLpChef;
         uint256 length = getMultLPLength();
@@ -459,7 +465,7 @@ contract HecoPool is Ownable {
     }
 
     modifier notPause() {
-        require(!paused, "Mining has been suspended");
+        require(paused == false, "Mining has been suspended");
         _;
     }
 }
