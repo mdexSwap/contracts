@@ -179,7 +179,7 @@ contract SwapMining is Ownable {
 
     // Rewards for the current block
     function getMdxReward(uint256 _lastRewardBlock) public view returns (uint256) {
-//        require(_lastRewardBlock <= block.number, "SwapMining: must little than the current block number");
+        require(_lastRewardBlock <= block.number, "SwapMining: must little than the current block number");
         uint256 blockReward = 0;
         uint256 n = phase(_lastRewardBlock);
         uint256 m = phase(block.number);
