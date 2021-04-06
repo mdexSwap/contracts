@@ -803,7 +803,7 @@ contract BSCPool is Ownable {
 
     using EnumerableSet for EnumerableSet.AddressSet;
     EnumerableSet.AddressSet private _multLP;
-    EnumerableSet.AddressSet private _blackList;
+    EnumerableSet.AddressSet private _whiteList;
 
     // Info of each user.
     struct UserInfo {
@@ -875,27 +875,27 @@ contract BSCPool is Ownable {
         return poolInfo.length;
     }
 
-    function addBadAddress(address _bad) public onlyOwner returns (bool) {
-        require(_bad != address(0), "_bad is the zero address");
-        return EnumerableSet.add(_blackList, _bad);
+    function addAddress(address addr) public onlyOwner returns (bool) {
+        require(addr != address(0), "addr is the zero address");
+        return EnumerableSet.add(_whiteList, addr);
     }
 
-    function delBadAddress(address _bad) public onlyOwner returns (bool) {
-        require(_bad != address(0), "_bad is the zero address");
-        return EnumerableSet.remove(_blackList, _bad);
+    function delAddress(address addr) public onlyOwner returns (bool) {
+        require(addr != address(0), "addr is the zero address");
+        return EnumerableSet.remove(_whiteList, addr);
     }
 
-    function getBlackListLength() public view returns (uint256) {
-        return EnumerableSet.length(_blackList);
+    function getWhiteListLength() public view returns (uint256) {
+        return EnumerableSet.length(_whiteList);
     }
 
-    function isBadAddress(address account) public view returns (bool) {
-        return EnumerableSet.contains(_blackList, account);
+    function isWhiteListAddress(address account) public view returns (bool) {
+        return EnumerableSet.contains(_whiteList, account);
     }
 
-    function getBadAddress(uint256 _index) public view onlyOwner returns (address){
-        require(_index <= getBlackListLength() - 1, "index out of bounds");
-        return EnumerableSet.at(_blackList, _index);
+    function getWhiteListAddress(uint256 index) public view onlyOwner returns (address){
+        require(index <= getWhiteListLength() - 1, "index out of bounds");
+        return EnumerableSet.at(_whiteList, index);
     }
 
     function addMultLP(address _addLP) public onlyOwner returns (bool) {
@@ -1101,7 +1101,9 @@ contract BSCPool is Ownable {
 
     // Deposit LP tokens to BSCPool for MDX allocation.
     function deposit(uint256 _pid, uint256 _amount) public notPause {
-        require(!isBadAddress(msg.sender), 'Illegal, rejected ');
+        if (tx.origin != msg.sender) {
+            require(isWhiteListAddress(msg.sender), 'Illegal, rejected ');
+        }
         PoolInfo storage pool = poolInfo[_pid];
         if (isMultLP(address(pool.lpToken))) {
             depositMdxAndToken(_pid, _amount, msg.sender);
