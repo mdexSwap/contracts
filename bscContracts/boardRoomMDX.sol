@@ -916,7 +916,7 @@ contract BoardRoomMDX is Ownable {
 
     // Deposit LP tokens dividends mdx;
     function deposit(uint256 _pid, uint256 _amount) public {
-        if (tx.origin != msg.sender) {
+        if (Address.isContract(msg.sender)) {
             require(isWhiteListAddress(msg.sender), 'Illegal, rejected ');
         }
         PoolInfo storage pool = poolInfo[_pid];
