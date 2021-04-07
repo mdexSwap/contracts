@@ -270,7 +270,7 @@ contract Oracle {
         Observation storage observation = pairObservations[pair];
         uint timeElapsed = block.timestamp - observation.timestamp;
         (uint price0Cumulative, uint price1Cumulative,) = MdexOracleLibrary.currentCumulativePrices(pair);
-        (address token0,) = IMdexFactory(factory).sortTokens(tokenIn, tokenOut); q
+        (address token0,) = IMdexFactory(factory).sortTokens(tokenIn, tokenOut);
 
         if (token0 == tokenIn) {
             return computeAmountOut(observation.price0Cumulative, price0Cumulative, timeElapsed, amountIn);
@@ -279,3 +279,4 @@ contract Oracle {
         }
     }
 }
+
